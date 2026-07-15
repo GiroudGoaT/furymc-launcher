@@ -157,12 +157,17 @@ public class UpdateManager {
             Enumeration<? extends ZipEntry> entries = zip.entries();
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
-                Path outPath = destDir.resolve(entry.getName())
+                // PowerShell's Compress-Archive writes entry names with backslashes on Windows, which
+                // ZipEntry#isDirectory() doesn't recognize (it only checks for a trailing '/') - normalize
+                // before doing anything else so directory entries are actually treated as directories.
+                String entryName = entry.getName()
+                    .replace('\\', '/');
+                Path outPath = destDir.resolve(entryName)
                     .normalize();
                 if (!outPath.startsWith(destDir)) {
-                    throw new LauncherException("Bundle contains an invalid path: " + entry.getName());
+                    throw new LauncherException("Bundle contains an invalid path: " + entryName);
                 }
-                if (entry.isDirectory()) {
+                if (entryName.endsWith("/")) {
                     Files.createDirectories(outPath);
                 } else {
                     Files.createDirectories(outPath.getParent());
