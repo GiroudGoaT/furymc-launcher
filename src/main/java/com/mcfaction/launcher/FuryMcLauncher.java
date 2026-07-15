@@ -313,6 +313,7 @@ public class FuryMcLauncher extends JFrame {
         try {
             Path logFile = new LauncherConfig().getInstallDir()
                 .resolveSibling("launcher-error.log");
+            Files.createDirectories(logFile.getParent());
             Files.writeString(
                 logFile,
                 message + "\n",

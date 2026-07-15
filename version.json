@@ -7,6 +7,6 @@
   "baseSha256": "a67fa5af65dd2474e579e39efa2bd5baf7fd5055abd64e0e74e3818ba4c6102e",
   "launcherVersion": "1.1.2",
   "launcherJarUrl": "https://github.com/GiroudGoaT/furymc-launcher/releases/download/launcher-v1.1.2/furymc-launcher.jar",
-  "launcherJarSha256": "181ef81c3a2c5315353eeb3e30294d926ca9de4a4ff24f2cea3488e9b44a1fb2",
+  "launcherJarSha256": "7559549f60f7028f4080c71c0bca3732b6825cdad5ced366e931b27fae39f274",
   "serverAddress": "51.255.167.101:25565"
 }
