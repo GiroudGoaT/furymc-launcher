@@ -40,6 +40,12 @@ public class FuryMcLauncher extends JFrame {
     // Update this on every published release, alongside the corresponding version.json.
     private static final String MANIFEST_URL = "https://raw.githubusercontent.com/GiroudGoaT/furymc-launcher/main/version.json";
 
+    // Bump this alongside the -PlauncherVersion passed to the packageExe Gradle task, and
+    // version.json's launcherVersion/launcherJarUrl/launcherJarSha256, whenever the launcher's own code
+    // changes (not game content - that's MANIFEST_URL's version/modUrl, unrelated to this). See
+    // SelfUpdater: this is the only place that needs a manual "reinstall the .exe" step ever again.
+    private static final String LAUNCHER_VERSION = "1.1.0";
+
     private static final int WINDOW_WIDTH = 960;
     private static final int WINDOW_HEIGHT = 540;
 
@@ -272,6 +278,21 @@ public class FuryMcLauncher extends JFrame {
     }
 
     public static void main(String[] args) {
+        if (selfUpdateApplied()) {
+            // A relaunch is already in flight via SelfUpdater's helper script - don't show a stale UI.
+            return;
+        }
         SwingUtilities.invokeLater(() -> new FuryMcLauncher().setVisible(true));
+    }
+
+    private static boolean selfUpdateApplied() {
+        try {
+            VersionManifest manifest = new UpdateManager().fetchManifest(MANIFEST_URL);
+            return new SelfUpdater().checkAndApply(LAUNCHER_VERSION, manifest);
+        } catch (Exception e) {
+            // No internet, manifest unreachable, etc. - start normally; the same failure will surface
+            // through the regular update flow once the player clicks Jouer.
+            return false;
+        }
     }
 }
