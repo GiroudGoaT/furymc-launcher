@@ -32,7 +32,7 @@ public class GameLauncher {
     private static final String TWEAK_CLASS = "cpw.mods.fml.common.launcher.FMLTweaker";
     private static final String MC_VERSION = "1.7.10";
 
-    public Process launch(Path installDir, String username, String uuid) {
+    public Process launch(Path installDir, String username, String uuid, int ramMb) {
         Path javaExe = installDir.resolve("jre8/bin/java.exe");
         Path librariesDir = installDir.resolve("libraries");
         Path nativesDir = installDir.resolve("natives");
@@ -55,6 +55,7 @@ public class GameLauncher {
         List<String> command = new ArrayList<>();
         command.add(javaExe.toAbsolutePath()
             .toString());
+        command.add("-Xmx" + ramMb + "M");
         command.add("-Djava.library.path=" + nativesDir.toAbsolutePath());
         command.add("-cp");
         command.add(buildClasspath(librariesDir));

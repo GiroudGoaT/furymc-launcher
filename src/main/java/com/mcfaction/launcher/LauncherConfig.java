@@ -16,6 +16,10 @@ public class LauncherConfig {
     private static final String APP_FOLDER_NAME = "FuryMcLauncher";
     private static final String PROPERTIES_FILE = "launcher.properties";
 
+    private static final int DEFAULT_RAM_MB = 2048;
+    public static final int MIN_RAM_MB = 1024;
+    public static final int MAX_RAM_MB = 8192;
+
     private final Path configDir;
     private final Path installDir;
     private final Properties properties = new Properties();
@@ -74,5 +78,18 @@ public class LauncherConfig {
 
     public Path getInstallDir() {
         return installDir;
+    }
+
+    public int getRamMb() {
+        try {
+            int ramMb = Integer.parseInt(properties.getProperty("ramMb", String.valueOf(DEFAULT_RAM_MB)));
+            return Math.max(MIN_RAM_MB, Math.min(MAX_RAM_MB, ramMb));
+        } catch (NumberFormatException e) {
+            return DEFAULT_RAM_MB;
+        }
+    }
+
+    public void setRamMb(int ramMb) {
+        properties.setProperty("ramMb", String.valueOf(ramMb));
     }
 }

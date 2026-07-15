@@ -8,6 +8,13 @@ java {
     }
 }
 
+tasks.withType<JavaCompile> {
+    // Without this, javac reads the (UTF-8) source files using the platform default charset, which
+    // on this Windows machine isn't UTF-8 - every accented character baked into a string literal
+    // (e.g. "Téléchargement...") got mangled into mojibake in the compiled class file.
+    options.encoding = "UTF-8"
+}
+
 application {
     mainClass.set("com.mcfaction.launcher.FuryMcLauncher")
 }
