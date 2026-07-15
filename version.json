@@ -2,5 +2,5 @@
   "version": "1.0.0",
   "bundleUrl": "https://github.com/GiroudGoaT/furymc-launcher/releases/download/v1.0.0/bundle.zip",
   "sha256": "b7073d56065b82fded8c01ee8b4f3cfb9b821eda12d1e9f29d14db50baac8cc6",
-  "serverAddress": "PLACEHOLDER_IP:25565"
+  "serverAddress": "51.255.167.101:25565"
 }
