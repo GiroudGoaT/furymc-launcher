@@ -137,8 +137,16 @@ public class FuryMcLauncher extends JFrame {
             publish(new ProgressUpdate(-1, "Vérification des mises à jour..."));
             VersionManifest manifest = updateManager.fetchManifest(MANIFEST_URL);
 
-            if (updateManager.needsUpdate(installDir, manifest)) {
-                updateManager.downloadAndInstall(
+            if (updateManager.needsBaseUpdate(installDir, manifest)) {
+                publish(new ProgressUpdate(-1, "Téléchargement des fichiers du jeu (première installation)..."));
+                updateManager.downloadAndInstallBase(
+                    installDir,
+                    manifest,
+                    (percent, status) -> publish(new ProgressUpdate(percent, status)));
+            }
+
+            if (updateManager.needsModUpdate(installDir, manifest)) {
+                updateManager.downloadAndInstallMod(
                     installDir,
                     manifest,
                     (percent, status) -> publish(new ProgressUpdate(percent, status)));
@@ -165,11 +173,12 @@ public class FuryMcLauncher extends JFrame {
         protected void done() {
             try {
                 get();
-                statusLabel.setText("Jeu lancé !");
+                // The game runs as its own detached process (see GameLauncher#launch) - it doesn't need
+                // this window anymore, so close it instead of leaving it sitting behind the game.
+                dispose();
             } catch (Exception e) {
                 Throwable cause = e.getCause() != null ? e.getCause() : e;
                 statusLabel.setText("Erreur : " + cause.getMessage());
-            } finally {
                 progressBar.setVisible(false);
                 playButton.setEnabled(true);
             }

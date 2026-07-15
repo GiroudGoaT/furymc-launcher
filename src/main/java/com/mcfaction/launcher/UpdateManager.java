@@ -18,15 +18,24 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 /**
- * Checks a remote version.json (hosted alongside the bundle releases on GitHub) against the locally
- * installed version, and downloads+extracts a fresh bundle when they differ. The bundle itself is a
- * single zip containing everything needed to run the modded client standalone (Forge+MC jar, libraries,
- * natives, assets, Java 8 runtime, and the mod jar pre-placed in mods/) - see the launcher project's
- * README for how that zip is assembled.
+ * Checks a remote version.json (hosted on GitHub) against what's locally installed, and downloads+
+ * extracts fresh files only where they differ. Two independent tracks, tracked by two separate local
+ * version files:
+ *
+ * <ul>
+ * <li><b>base</b> ({@link #BASE_VERSION_FILE_NAME}) - JRE8/libraries/natives/Mojang assets. This is the
+ * ~300 MB part that essentially never changes, so it's fetched once and then left alone.
+ * <li><b>mod</b> ({@link #VERSION_FILE_NAME}) - the mod jar + instance config. This is the few-MB part
+ * that changes on every release, fetched again whenever the version bumps.
+ * </ul>
+ *
+ * See VersionManifest for the manifest shape and the launcher project's tools/ scripts for how each zip
+ * is assembled.
  */
 public class UpdateManager {
 
     private static final String VERSION_FILE_NAME = "version.txt";
+    private static final String BASE_VERSION_FILE_NAME = "base-version.txt";
     private final HttpClient httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(15))
         .followRedirects(HttpClient.Redirect.NORMAL)
@@ -47,42 +56,68 @@ public class UpdateManager {
         }
     }
 
-    public String getLocalVersion(Path installDir) {
-        Path versionFile = installDir.resolve(VERSION_FILE_NAME);
+    public boolean needsBaseUpdate(Path installDir, VersionManifest remote) {
+        return needsUpdate(installDir, BASE_VERSION_FILE_NAME, remote.getBaseVersion());
+    }
+
+    public boolean needsModUpdate(Path installDir, VersionManifest remote) {
+        return needsUpdate(installDir, VERSION_FILE_NAME, remote.getVersion());
+    }
+
+    private boolean needsUpdate(Path installDir, String versionFileName, String remoteVersion) {
+        Path versionFile = installDir.resolve(versionFileName);
         if (!Files.exists(versionFile)) {
-            return null;
+            return true;
         }
         try {
-            return Files.readString(versionFile, StandardCharsets.UTF_8)
+            String local = Files.readString(versionFile, StandardCharsets.UTF_8)
                 .trim();
+            return !local.equals(remoteVersion);
         } catch (IOException e) {
-            return null;
+            return true;
         }
     }
 
-    public boolean needsUpdate(Path installDir, VersionManifest remote) {
-        String local = getLocalVersion(installDir);
-        return local == null || !local.equals(remote.getVersion());
+    /** Downloads+extracts the large, rarely-changing base bundle (JRE8/libraries/natives/assets). */
+    public void downloadAndInstallBase(Path installDir, VersionManifest remote, ProgressListener listener) {
+        downloadAndInstall(
+            installDir,
+            remote.getBaseUrl(),
+            remote.getBaseSha256(),
+            BASE_VERSION_FILE_NAME,
+            remote.getBaseVersion(),
+            listener);
     }
 
-    public void downloadAndInstall(Path installDir, VersionManifest remote, ProgressListener listener) {
+    /** Downloads+extracts the small mod update (mod jar + instance config) - the normal update path. */
+    public void downloadAndInstallMod(Path installDir, VersionManifest remote, ProgressListener listener) {
+        downloadAndInstall(
+            installDir,
+            remote.getModUrl(),
+            remote.getModSha256(),
+            VERSION_FILE_NAME,
+            remote.getVersion(),
+            listener);
+    }
+
+    private void downloadAndInstall(Path installDir, String url, String expectedSha256, String versionFileName,
+        String newVersion, ProgressListener listener) {
         try {
             Files.createDirectories(installDir);
             Path downloadTarget = installDir.resolveSibling("download.zip");
 
             listener.onProgress(0, "Téléchargement de la mise à jour...");
-            downloadWithProgress(remote.getBundleUrl(), downloadTarget, listener);
+            downloadWithProgress(url, downloadTarget, listener);
 
-            if (remote.getSha256() != null && !remote.getSha256()
-                .isBlank()) {
+            if (expectedSha256 != null && !expectedSha256.isBlank()) {
                 listener.onProgress(-1, "Vérification du fichier...");
-                verifyChecksum(downloadTarget, remote.getSha256());
+                verifyChecksum(downloadTarget, expectedSha256);
             }
 
             listener.onProgress(-1, "Installation...");
             extractZip(downloadTarget, installDir, listener);
 
-            Files.writeString(installDir.resolve(VERSION_FILE_NAME), remote.getVersion());
+            Files.writeString(installDir.resolve(versionFileName), newVersion);
             Files.deleteIfExists(downloadTarget);
         } catch (IOException e) {
             throw new LauncherException("Échec de la mise à jour", e);
