@@ -32,7 +32,7 @@ public class GameLauncher {
     private static final String TWEAK_CLASS = "cpw.mods.fml.common.launcher.FMLTweaker";
     private static final String MC_VERSION = "1.7.10";
 
-    public Process launch(Path installDir, String username, String uuid, String serverAddress) {
+    public Process launch(Path installDir, String username, String uuid) {
         Path javaExe = installDir.resolve("jre8/bin/java.exe");
         Path librariesDir = installDir.resolve("libraries");
         Path nativesDir = installDir.resolve("natives");
@@ -79,14 +79,6 @@ public class GameLauncher {
         command.add("{}");
         command.add("--tweakClass");
         command.add(TWEAK_CLASS);
-
-        if (serverAddress != null && !serverAddress.isBlank() && serverAddress.contains(":")) {
-            int splitAt = serverAddress.lastIndexOf(':');
-            command.add("--server");
-            command.add(serverAddress.substring(0, splitAt));
-            command.add("--port");
-            command.add(serverAddress.substring(splitAt + 1));
-        }
 
         try {
             ProcessBuilder builder = new ProcessBuilder(command);

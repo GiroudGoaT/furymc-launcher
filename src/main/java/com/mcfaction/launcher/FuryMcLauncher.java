@@ -145,7 +145,7 @@ public class FuryMcLauncher extends JFrame {
             }
 
             publish(new ProgressUpdate(-1, "Lancement du jeu..."));
-            gameLauncher.launch(installDir, username, config.getOrCreateUuid(), manifest.getServerAddress());
+            gameLauncher.launch(installDir, username, config.getOrCreateUuid());
             return null;
         }
 
