@@ -1,0 +1,30 @@
+name: Deploy mod to VPS
+
+# Only fires when a Release is published, not on every commit - most pushes to this repo only touch
+# the launcher (client-side), which has nothing to do with the live server. Deploying only on release
+# means the server (and everyone connected to it) only restarts when we actually mean to ship an
+# update, matching factionaddon.jar's build for that release.
+on:
+  release:
+    types: [published]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download factionaddon.jar from this release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ github.event.release.tag_name }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "factionaddon.jar" \
+            --output factionaddon.jar
+
+      - name: Deploy over SSH (forced remote command places the jar and restarts the service)
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key ubuntu@${{ secrets.VPS_HOST }} < factionaddon.jar
