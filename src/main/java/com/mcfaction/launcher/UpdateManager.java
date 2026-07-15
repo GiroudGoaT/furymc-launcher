@@ -43,7 +43,11 @@ public class UpdateManager {
 
     public VersionManifest fetchManifest(String manifestUrl) {
         try {
+            // Bounds the whole request, not just the connect phase (HttpClient's connectTimeout only
+            // covers the TCP handshake) - without this, a connection that succeeds but never responds
+            // (captive portal, dead proxy, GitHub hiccup) would hang indefinitely.
             HttpRequest request = HttpRequest.newBuilder(URI.create(manifestUrl))
+                .timeout(Duration.ofSeconds(15))
                 .GET()
                 .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());

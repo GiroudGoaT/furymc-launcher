@@ -44,7 +44,7 @@ public class FuryMcLauncher extends JFrame {
     // version.json's launcherVersion/launcherJarUrl/launcherJarSha256, whenever the launcher's own code
     // changes (not game content - that's MANIFEST_URL's version/modUrl, unrelated to this). See
     // SelfUpdater: this is the only place that needs a manual "reinstall the .exe" step ever again.
-    private static final String LAUNCHER_VERSION = "1.1.0";
+    private static final String LAUNCHER_VERSION = "1.1.1";
 
     private static final int WINDOW_WIDTH = 960;
     private static final int WINDOW_HEIGHT = 540;
@@ -278,21 +278,45 @@ public class FuryMcLauncher extends JFrame {
     }
 
     public static void main(String[] args) {
-        if (selfUpdateApplied()) {
-            // A relaunch is already in flight via SelfUpdater's helper script - don't show a stale UI.
-            return;
-        }
-        SwingUtilities.invokeLater(() -> new FuryMcLauncher().setVisible(true));
+        // The window must appear unconditionally and immediately - it must never be gated behind a
+        // network call. checkSelfUpdateInBackground runs off the EDT precisely so that a slow/hung
+        // manifest fetch (bad network, DNS hiccup, GitHub blip) can never look like "the launcher does
+        // nothing when I open it".
+        SwingUtilities.invokeLater(() -> {
+            FuryMcLauncher launcher = new FuryMcLauncher();
+            launcher.setVisible(true);
+            launcher.checkSelfUpdateInBackground();
+        });
     }
 
-    private static boolean selfUpdateApplied() {
-        try {
-            VersionManifest manifest = new UpdateManager().fetchManifest(MANIFEST_URL);
-            return new SelfUpdater().checkAndApply(LAUNCHER_VERSION, manifest);
-        } catch (Exception e) {
-            // No internet, manifest unreachable, etc. - start normally; the same failure will surface
-            // through the regular update flow once the player clicks Jouer.
-            return false;
-        }
+    /** Runs once at startup, independently of the Jouer button - see SelfUpdater. */
+    private void checkSelfUpdateInBackground() {
+        new SwingWorker<Boolean, Void>() {
+
+            @Override
+            protected Boolean doInBackground() {
+                try {
+                    VersionManifest manifest = updateManager.fetchManifest(MANIFEST_URL);
+                    return new SelfUpdater().checkAndApply(LAUNCHER_VERSION, manifest);
+                } catch (Exception e) {
+                    // No internet, manifest unreachable, etc. - the player can still use the launcher
+                    // normally; the same failure will surface through the regular update flow (with a
+                    // visible error) once they click Jouer.
+                    return false;
+                }
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    if (Boolean.TRUE.equals(get())) {
+                        // A relaunch is already in flight via SelfUpdater's helper script.
+                        dispose();
+                    }
+                } catch (Exception e) {
+                    // Ignore - same reasoning as the doInBackground catch above.
+                }
+            }
+        }.execute();
     }
 }
