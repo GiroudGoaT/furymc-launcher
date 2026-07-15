@@ -29,6 +29,7 @@ public class UpdateManager {
     private static final String VERSION_FILE_NAME = "version.txt";
     private final HttpClient httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(15))
+        .followRedirects(HttpClient.Redirect.NORMAL)
         .build();
 
     public VersionManifest fetchManifest(String manifestUrl) {
