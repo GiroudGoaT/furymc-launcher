@@ -16,9 +16,15 @@ import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.LocalDateTime;
 
 import javax.imageio.ImageIO;
+import javax.swing.JOptionPane;
 import javax.swing.BorderFactory;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
@@ -44,7 +50,7 @@ public class FuryMcLauncher extends JFrame {
     // version.json's launcherVersion/launcherJarUrl/launcherJarSha256, whenever the launcher's own code
     // changes (not game content - that's MANIFEST_URL's version/modUrl, unrelated to this). See
     // SelfUpdater: this is the only place that needs a manual "reinstall the .exe" step ever again.
-    private static final String LAUNCHER_VERSION = "1.1.1";
+    private static final String LAUNCHER_VERSION = "1.1.2";
 
     private static final int WINDOW_WIDTH = 960;
     private static final int WINDOW_HEIGHT = 540;
@@ -278,15 +284,49 @@ public class FuryMcLauncher extends JFrame {
     }
 
     public static void main(String[] args) {
-        // The window must appear unconditionally and immediately - it must never be gated behind a
-        // network call. checkSelfUpdateInBackground runs off the EDT precisely so that a slow/hung
-        // manifest fetch (bad network, DNS hiccup, GitHub blip) can never look like "the launcher does
-        // nothing when I open it".
-        SwingUtilities.invokeLater(() -> {
-            FuryMcLauncher launcher = new FuryMcLauncher();
-            launcher.setVisible(true);
-            launcher.checkSelfUpdateInBackground();
-        });
+        // A jpackage app-image has no console attached when double-clicked, so an uncaught exception
+        // here would otherwise vanish completely - the exact "nothing happens when I open it" symptom
+        // this is meant to rule out. Anything that goes wrong from this point on, on any thread, gets a
+        // visible dialog (JOptionPane, since it doesn't depend on our own icon/background resources
+        // loading successfully) and a line in %APPDATA%/FuryMcLauncher/launcher-error.log.
+        Thread.setDefaultUncaughtExceptionHandler((thread, e) -> reportFatalError(e));
+        try {
+            // The window must appear unconditionally and immediately - it must never be gated behind a
+            // network call. checkSelfUpdateInBackground runs off the EDT precisely so that a slow/hung
+            // manifest fetch (bad network, DNS hiccup, GitHub blip) can never look like "the launcher
+            // does nothing when I open it".
+            SwingUtilities.invokeAndWait(() -> {
+                FuryMcLauncher launcher = new FuryMcLauncher();
+                launcher.setVisible(true);
+                launcher.checkSelfUpdateInBackground();
+            });
+        } catch (Exception e) {
+            reportFatalError(e);
+        }
+    }
+
+    private static void reportFatalError(Throwable e) {
+        StringWriter trace = new StringWriter();
+        e.printStackTrace(new PrintWriter(trace));
+        String message = LocalDateTime.now() + "\n" + trace;
+
+        try {
+            Path logFile = new LauncherConfig().getInstallDir()
+                .resolveSibling("launcher-error.log");
+            Files.writeString(
+                logFile,
+                message + "\n",
+                StandardOpenOption.CREATE,
+                StandardOpenOption.APPEND);
+        } catch (Exception logFailure) {
+            // Best effort - still show the dialog below even if we can't write the log file.
+        }
+
+        JOptionPane.showMessageDialog(
+            null,
+            "FuryMc Launcher n'a pas pu démarrer :\n\n" + e + "\n\nDétails dans launcher-error.log (%APPDATA%\\FuryMcLauncher\\).",
+            "Erreur FuryMc Launcher",
+            JOptionPane.ERROR_MESSAGE);
     }
 
     /** Runs once at startup, independently of the Jouer button - see SelfUpdater. */
