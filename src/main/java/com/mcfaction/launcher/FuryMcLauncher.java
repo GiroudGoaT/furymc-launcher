@@ -34,6 +34,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import javax.imageio.ImageIO;
+import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
@@ -221,10 +222,21 @@ public class FuryMcLauncher extends JFrame {
 
         JPanel centerPanel = new JPanel(new GridBagLayout());
         centerPanel.setOpaque(false);
+
+        GridBagConstraints logoGbc = new GridBagConstraints();
+        logoGbc.gridx = 0;
+        logoGbc.gridy = 0;
+        logoGbc.insets = new Insets(0, 0, 16, 0);
+        JLabel logoLabel = new JLabel(scaledIcon(loadImage("/logo.png"), 340));
+        centerPanel.add(logoLabel, logoGbc);
+
+        GridBagConstraints sloganGbc = new GridBagConstraints();
+        sloganGbc.gridx = 0;
+        sloganGbc.gridy = 1;
         JLabel sloganLabel = new JLabel("Si tu veux la paix, prépare la guerre");
         sloganLabel.setFont(new Font("Segoe UI", Font.ITALIC, 14));
         sloganLabel.setForeground(Color.WHITE);
-        centerPanel.add(sloganLabel, new GridBagConstraints());
+        centerPanel.add(sloganLabel, sloganGbc);
         panel.add(centerPanel, BorderLayout.CENTER);
 
         JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 20));
@@ -437,6 +449,12 @@ public class FuryMcLauncher extends JFrame {
         } catch (IOException e) {
             throw new LauncherException("Could not load image " + resourcePath, e);
         }
+    }
+
+    /** Scales an image down to the given display width, preserving aspect ratio, for use as a JLabel icon. */
+    private static ImageIcon scaledIcon(Image source, int displayWidth) {
+        int displayHeight = Math.round(displayWidth * (source.getHeight(null) / (float) source.getWidth(null)));
+        return new ImageIcon(source.getScaledInstance(displayWidth, displayHeight, Image.SCALE_SMOOTH));
     }
 
     /** Paints the FuryMc background image scaled to fill the window, plus a gradient border tracing the
