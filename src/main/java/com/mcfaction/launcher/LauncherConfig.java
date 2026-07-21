@@ -92,4 +92,17 @@ public class LauncherConfig {
     public void setRamMb(int ramMb) {
         properties.setProperty("ramMb", String.valueOf(ramMb));
     }
+
+    public float getMusicVolume() {
+        try {
+            float volume = Float.parseFloat(properties.getProperty("musicVolume", "0.7"));
+            return Math.max(0F, Math.min(1F, volume));
+        } catch (NumberFormatException e) {
+            return 0.7F;
+        }
+    }
+
+    public void setMusicVolume(float volume) {
+        properties.setProperty("musicVolume", String.valueOf(Math.max(0F, Math.min(1F, volume))));
+    }
 }

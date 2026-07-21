@@ -34,6 +34,11 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import javax.imageio.ImageIO;
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioInputStream;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.LineUnavailableException;
+import javax.sound.sampled.SourceDataLine;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JComponent;
@@ -73,7 +78,7 @@ public class FuryMcLauncher extends JFrame {
     // version.json's launcherVersion/launcherJarUrl/launcherJarSha256, whenever the launcher's own code
     // changes (not game content - that's MANIFEST_URL's version/modUrl, unrelated to this). See
     // SelfUpdater: this is the only place that needs a manual "reinstall the .exe" step ever again.
-    private static final String LAUNCHER_VERSION = "1.3.1";
+    private static final String LAUNCHER_VERSION = "1.3.2";
 
     private static final Dimension LOADING_SIZE = new Dimension(420, 580);
     private static final Dimension MAIN_SIZE = new Dimension(1100, 620);
@@ -104,6 +109,11 @@ public class FuryMcLauncher extends JFrame {
     private JButton profileButton;
     private RootPanel content;
 
+    private MusicPlayer musicPlayer;
+    private SoundButton soundButton;
+    private VolumeBar volumeBar;
+    private float lastNonZeroVolume = 0.7F;
+
     public FuryMcLauncher() {
         super("FuryMc Launcher");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -131,7 +141,7 @@ public class FuryMcLauncher extends JFrame {
      *  borderless so they blend into the background instead of reading as their own button. Only on the
      *  main card - the loading card shows none at all. */
     private JPanel buildWindowControls() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 4));
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 1));
         panel.setOpaque(false);
 
         JButton minimizeButton = new WindowControlButton(false);
@@ -207,37 +217,45 @@ public class FuryMcLauncher extends JFrame {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setOpaque(false);
 
-        JPanel topPanel = new JPanel(new BorderLayout());
-        topPanel.setOpaque(false);
-        topPanel.add(buildWindowControls(), BorderLayout.NORTH);
-
-        JPanel profileRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 20, 10));
-        profileRow.setOpaque(false);
+        JPanel topPanel = buildWindowControls();
         profileButton = new ImageButton(loadImage("/button_profile.png"), 44, 44);
         profileButton.addActionListener(e -> showProfilePopup());
-        profileRow.add(profileButton);
-        topPanel.add(profileRow, BorderLayout.SOUTH);
 
-        panel.add(topPanel, BorderLayout.NORTH);
-
-        JPanel centerPanel = new JPanel(new GridBagLayout());
-        centerPanel.setOpaque(false);
-
-        GridBagConstraints logoGbc = new GridBagConstraints();
-        logoGbc.gridx = 0;
-        logoGbc.gridy = 0;
-        logoGbc.insets = new Insets(0, 0, 16, 0);
-        JLabel logoLabel = new JLabel(scaledIcon(loadImage("/logo.png"), 340));
-        centerPanel.add(logoLabel, logoGbc);
-
-        GridBagConstraints sloganGbc = new GridBagConstraints();
-        sloganGbc.gridx = 0;
-        sloganGbc.gridy = 1;
+        // The logo sits almost flush with the top of the window - closer than the window-controls row
+        // would otherwise allow - by using absolute positioning (null layout) instead of stacking it
+        // below that row: the controls float on top of the logo's (transparent-cropped) artwork instead
+        // of pushing it down.
+        JLabel logoLabel = new JLabel(scaledIcon(loadImage("/logo.png"), 520));
         JLabel sloganLabel = new JLabel("Si tu veux la paix, prépare la guerre");
         sloganLabel.setFont(new Font("Segoe UI", Font.ITALIC, 14));
         sloganLabel.setForeground(Color.WHITE);
-        centerPanel.add(sloganLabel, sloganGbc);
-        panel.add(centerPanel, BorderLayout.CENTER);
+
+        JPanel stage = new JPanel(null) {
+            @Override
+            public void doLayout() {
+                int width = getWidth();
+
+                Dimension logoSize = logoLabel.getPreferredSize();
+                logoLabel.setBounds((width - logoSize.width) / 2, 2, logoSize.width, logoSize.height);
+
+                Dimension sloganSize = sloganLabel.getPreferredSize();
+                int sloganY = logoLabel.getY() + logoSize.height + 8;
+                sloganLabel.setBounds((width - sloganSize.width) / 2, sloganY, sloganSize.width, sloganSize.height);
+
+                Dimension controlsSize = topPanel.getPreferredSize();
+                topPanel.setBounds(width - controlsSize.width, 0, controlsSize.width, controlsSize.height);
+
+                Dimension profileSize = profileButton.getPreferredSize();
+                profileButton.setBounds(4, 4, profileSize.width, profileSize.height);
+            }
+        };
+        stage.setOpaque(false);
+        stage.add(logoLabel);
+        stage.add(sloganLabel);
+        stage.add(topPanel);
+        stage.add(profileButton);
+
+        panel.add(stage, BorderLayout.CENTER);
 
         JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 20));
         bottomPanel.setOpaque(false);
@@ -251,7 +269,30 @@ public class FuryMcLauncher extends JFrame {
         bottomPanel.add(mainStatusLabel);
         bottomPanel.add(playButton);
         bottomPanel.add(settingsButton);
-        panel.add(bottomPanel, BorderLayout.SOUTH);
+
+        JPanel bottomBar = new JPanel(new BorderLayout());
+        bottomBar.setOpaque(false);
+        JPanel soundHolder = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 20));
+        soundHolder.setOpaque(false);
+
+        float initialVolume = config.getMusicVolume();
+        if (initialVolume > 0F) {
+            lastNonZeroVolume = initialVolume;
+        }
+
+        soundButton = new SoundButton();
+        soundButton.setMuted(initialVolume <= 0.0001F);
+        soundButton.addActionListener(e -> toggleMusicMuted());
+
+        volumeBar = new VolumeBar(initialVolume);
+        volumeBar.onDrag = v -> applyMusicVolume(v, false);
+        volumeBar.onCommit = v -> applyMusicVolume(v, true);
+
+        soundHolder.add(soundButton);
+        soundHolder.add(volumeBar);
+        bottomBar.add(soundHolder, BorderLayout.WEST);
+        bottomBar.add(bottomPanel, BorderLayout.CENTER);
+        panel.add(bottomBar, BorderLayout.SOUTH);
 
         return panel;
     }
@@ -333,13 +374,13 @@ public class FuryMcLauncher extends JFrame {
 
         popup.add(popupContent);
         popup.pack();
-        popup.show(profileButton, profileButton.getWidth() - popup.getPreferredSize().width, profileButton.getHeight() + 6);
+        popup.show(profileButton, 16, profileButton.getHeight() + 6);
     }
 
     private void onPlay() {
         String username = config.getUsername();
         if (username.isEmpty()) {
-            mainStatusLabel.setText("Définis ton pseudo en haut à droite");
+            mainStatusLabel.setText("Définis ton pseudo en haut à gauche");
             showProfilePopup();
             return;
         }
@@ -438,6 +479,48 @@ public class FuryMcLauncher extends JFrame {
         setSize(MAIN_SIZE);
         setLocationRelativeTo(null);
         applyRoundedShape();
+        startBackgroundMusic();
+    }
+
+    /** Loads the whole track into memory once and streams it in small chunks for the lifetime of the
+     *  process (see {@link MusicPlayer}) - a javax.sound.sampled.Clip's MASTER_GAIN control only affects
+     *  audio not yet handed off to the OS, and with an entire 2-minute track queued at once that made
+     *  volume changes audibly lag behind the slider. Streaming in small chunks and applying gain in
+     *  software per-chunk keeps that lag down to one chunk's worth of audio. */
+    private void startBackgroundMusic() {
+        try (AudioInputStream audioIn = AudioSystem.getAudioInputStream(getClass().getResource("/music.wav"))) {
+            byte[] pcm = audioIn.readAllBytes();
+            musicPlayer = new MusicPlayer(pcm, audioIn.getFormat(), config.getMusicVolume());
+            musicPlayer.start();
+        } catch (Exception e) {
+            // No music is a cosmetic loss, not worth failing the launcher over.
+        }
+    }
+
+    private void applyMusicVolume(float volume, boolean persist) {
+        volume = Math.max(0F, Math.min(1F, volume));
+        if (volume > 0F) {
+            lastNonZeroVolume = volume;
+        }
+        if (musicPlayer != null) {
+            musicPlayer.setVolume(volume);
+        }
+        if (soundButton != null) {
+            soundButton.setMuted(volume <= 0.0001F);
+        }
+        if (volumeBar != null) {
+            volumeBar.setValue(volume);
+        }
+        if (persist) {
+            config.setMusicVolume(volume);
+            config.save();
+        }
+    }
+
+    private void toggleMusicMuted() {
+        float current = config.getMusicVolume();
+        float next = current > 0.0001F ? 0F : (lastNonZeroVolume > 0F ? lastNonZeroVolume : 0.7F);
+        applyMusicVolume(next, true);
     }
 
     private static Image loadImage(String resourcePath) {
@@ -541,6 +624,212 @@ public class FuryMcLauncher extends JFrame {
                 g2.drawLine(pad, h / 2, w - pad, h / 2);
             }
             g2.dispose();
+        }
+    }
+
+    /** Same flat-glyph treatment as {@link WindowControlButton}, but the glyph itself is Windows' own
+     *  volume icon - Segoe Fluent Icons/Segoe MDL2 Assets (both ship with Windows 10/11) map the mute and
+     *  full-volume speaker glyphs to U+E74F and U+E995, so no custom-drawn shape or image asset is
+     *  needed to match the OS's own icon. */
+    private static class SoundButton extends JButton {
+
+        private static final String GLYPH_MUTED = "";
+        private static final String GLYPH_ON = "";
+
+        private boolean muted;
+        private boolean hovered;
+
+        SoundButton() {
+            setFocusPainted(false);
+            setBorderPainted(false);
+            setContentAreaFilled(false);
+            setPreferredSize(new Dimension(32, 32));
+            addMouseListener(new MouseAdapter() {
+
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    hovered = true;
+                    repaint();
+                }
+
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    hovered = false;
+                    repaint();
+                }
+            });
+        }
+
+        void setMuted(boolean muted) {
+            this.muted = muted;
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setColor(hovered ? Color.WHITE : new Color(255, 255, 255, 170));
+
+            Font iconFont = new Font("Segoe Fluent Icons", Font.PLAIN, 18);
+            if (!iconFont.canDisplay('')) {
+                iconFont = new Font("Segoe MDL2 Assets", Font.PLAIN, 18);
+            }
+            g2.setFont(iconFont);
+
+            String glyph = muted ? GLYPH_MUTED : GLYPH_ON;
+            var metrics = g2.getFontMetrics();
+            int x = (getWidth() - metrics.stringWidth(glyph)) / 2;
+            int y = (getHeight() - metrics.getHeight()) / 2 + metrics.getAscent();
+            g2.drawString(glyph, x, y);
+            g2.dispose();
+        }
+    }
+
+    /** Compact draggable level bar next to the sound glyph - a plain mute toggle can only go all the way
+     *  on or off, so this adds an actual 0-100% level the player can drag to. onDrag fires continuously
+     *  while dragging (live audio feedback, not persisted); onCommit fires once on mouse release (what
+     *  actually gets saved), so dragging doesn't hammer the properties file with a write per pixel. */
+    private static class VolumeBar extends JComponent {
+
+        private float value;
+        java.util.function.Consumer<Float> onDrag;
+        java.util.function.Consumer<Float> onCommit;
+
+        VolumeBar(float initialValue) {
+            this.value = initialValue;
+            setPreferredSize(new Dimension(90, 32));
+            setOpaque(false);
+
+            MouseAdapter handler = new MouseAdapter() {
+
+                @Override
+                public void mousePressed(MouseEvent e) {
+                    updateFromMouse(e.getX(), false);
+                }
+
+                @Override
+                public void mouseDragged(MouseEvent e) {
+                    updateFromMouse(e.getX(), false);
+                }
+
+                @Override
+                public void mouseReleased(MouseEvent e) {
+                    updateFromMouse(e.getX(), true);
+                }
+            };
+            addMouseListener(handler);
+            addMouseMotionListener(handler);
+        }
+
+        private void updateFromMouse(int x, boolean commit) {
+            value = Math.max(0F, Math.min(1F, x / (float) getWidth()));
+            repaint();
+            if (commit) {
+                if (onCommit != null) {
+                    onCommit.accept(value);
+                }
+            } else if (onDrag != null) {
+                onDrag.accept(value);
+            }
+        }
+
+        void setValue(float value) {
+            this.value = Math.max(0F, Math.min(1F, value));
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int width = getWidth();
+            int trackHeight = 4;
+            int y = getHeight() / 2 - trackHeight / 2;
+
+            g2.setColor(new Color(255, 255, 255, 60));
+            g2.fillRoundRect(0, y, width, trackHeight, trackHeight, trackHeight);
+
+            int filledWidth = Math.round(width * value);
+            g2.setColor(GOLD);
+            g2.fillRoundRect(0, y, Math.max(trackHeight, filledWidth), trackHeight, trackHeight, trackHeight);
+
+            int handleD = 12;
+            int handleX = Math.max(0, Math.min(width - handleD, filledWidth - handleD / 2));
+            g2.setColor(GOLD);
+            g2.fillOval(handleX, getHeight() / 2 - handleD / 2, handleD, handleD);
+
+            g2.dispose();
+        }
+    }
+
+    /** Streams PCM in small chunks on a dedicated thread instead of handing the whole track to a
+     *  javax.sound.sampled.Clip at once - see the note on {@link #startBackgroundMusic()} for why. Gain
+     *  is applied here in software (each signed 16-bit sample scaled by the current volume) rather than
+     *  through a mixer control, since {@code volume} is read fresh for every chunk. */
+    private static class MusicPlayer {
+
+        private static final int CHUNK_FRAMES = 2048;
+
+        private final byte[] pcm;
+        private final AudioFormat format;
+        private volatile float volume;
+        private volatile boolean running;
+
+        MusicPlayer(byte[] pcm, AudioFormat format, float initialVolume) {
+            this.pcm = pcm;
+            this.format = format;
+            this.volume = initialVolume;
+        }
+
+        void setVolume(float volume) {
+            this.volume = volume;
+        }
+
+        void start() {
+            running = true;
+            Thread thread = new Thread(this::run, "music-player");
+            thread.setDaemon(true);
+            thread.start();
+        }
+
+        private void run() {
+            try {
+                SourceDataLine line = AudioSystem.getSourceDataLine(format);
+                line.open(format);
+                line.start();
+
+                int chunkBytes = CHUNK_FRAMES * format.getFrameSize();
+                byte[] chunk = new byte[chunkBytes];
+                int position = 0;
+
+                while (running) {
+                    int toCopy = Math.min(chunkBytes, pcm.length - position);
+                    System.arraycopy(pcm, position, chunk, 0, toCopy);
+                    applyGain(chunk, toCopy, volume);
+                    line.write(chunk, 0, toCopy);
+                    position += toCopy;
+                    if (position >= pcm.length) {
+                        position = 0;
+                    }
+                }
+                line.drain();
+                line.close();
+            } catch (LineUnavailableException e) {
+                // No music is a cosmetic loss, not worth failing the launcher over.
+            }
+        }
+
+        /** In-place scale of each signed 16-bit little-endian sample - matches the PCM_SIGNED stereo
+         *  16-bit format the track is authored in (see the format assertion in startBackgroundMusic). */
+        private static void applyGain(byte[] chunk, int length, float volume) {
+            for (int i = 0; i + 1 < length; i += 2) {
+                short sample = (short) ((chunk[i] & 0xFF) | (chunk[i + 1] << 8));
+                short scaled = (short) Math.round(sample * volume);
+                chunk[i] = (byte) (scaled & 0xFF);
+                chunk[i + 1] = (byte) (scaled >> 8);
+            }
         }
     }
 
