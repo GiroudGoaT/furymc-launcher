@@ -8,12 +8,12 @@ import java.nio.file.Path;
 import java.util.Properties;
 import java.util.UUID;
 
-/** Local launcher settings (username, install dir) - stored in %APPDATA%/FuryMcLauncher/launcher.properties.
+/** Local launcher settings (username, install dir) - stored in %APPDATA%/.furymc/launcher.properties.
  *  No real account/authentication: the server runs in offline mode, so a saved username is all that's
  *  needed, matching how the mod's own server is already configured. */
 public class LauncherConfig {
 
-    private static final String APP_FOLDER_NAME = "FuryMcLauncher";
+    private static final String APP_FOLDER_NAME = ".furymc";
     private static final String PROPERTIES_FILE = "launcher.properties";
 
     private static final int DEFAULT_RAM_MB = 2048;
@@ -29,7 +29,22 @@ public class LauncherConfig {
         Path base = appData != null ? Path.of(appData) : Path.of(System.getProperty("user.home"));
         configDir = base.resolve(APP_FOLDER_NAME);
         installDir = configDir.resolve("instance");
+        hideConfigDir();
         load();
+    }
+
+    /**
+     * The leading dot is just a naming convention on Windows (unlike Unix, it does not hide anything
+     * by itself) - the actual DOS "hidden" attribute is what keeps this out of Explorer by default.
+     * Best-effort only: never worth failing launcher startup over.
+     */
+    private void hideConfigDir() {
+        try {
+            Files.createDirectories(configDir);
+            Files.setAttribute(configDir, "dos:hidden", true);
+        } catch (Exception e) {
+            // Not fatal - worst case the folder is just visible, still fully functional.
+        }
     }
 
     private void load() {

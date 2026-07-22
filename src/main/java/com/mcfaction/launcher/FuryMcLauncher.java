@@ -78,7 +78,7 @@ public class FuryMcLauncher extends JFrame {
     // version.json's launcherVersion/launcherJarUrl/launcherJarSha256, whenever the launcher's own code
     // changes (not game content - that's MANIFEST_URL's version/modUrl, unrelated to this). See
     // SelfUpdater: this is the only place that needs a manual "reinstall the .exe" step ever again.
-    private static final String LAUNCHER_VERSION = "1.3.2";
+    private static final String LAUNCHER_VERSION = "1.3.3";
 
     private static final Dimension LOADING_SIZE = new Dimension(420, 580);
     private static final Dimension MAIN_SIZE = new Dimension(1100, 620);
@@ -1202,7 +1202,7 @@ public class FuryMcLauncher extends JFrame {
         // here would otherwise vanish completely - the exact "nothing happens when I open it" symptom
         // this is meant to rule out. Anything that goes wrong from this point on, on any thread, gets a
         // visible dialog (JOptionPane, since it doesn't depend on our own icon/background resources
-        // loading successfully) and a line in %APPDATA%/FuryMcLauncher/launcher-error.log.
+        // loading successfully) and a line in %APPDATA%/.furymc/launcher-error.log.
         Thread.setDefaultUncaughtExceptionHandler((thread, e) -> reportFatalError(e));
         try {
             // The window must appear unconditionally and immediately - it must never be gated behind a
@@ -1246,7 +1246,7 @@ public class FuryMcLauncher extends JFrame {
 
         JOptionPane.showMessageDialog(
             null,
-            "FuryMc Launcher n'a pas pu démarrer :\n\n" + e + "\n\nDétails dans launcher-error.log (%APPDATA%\\FuryMcLauncher\\).",
+            "FuryMc Launcher n'a pas pu démarrer :\n\n" + e + "\n\nDétails dans launcher-error.log (%APPDATA%\\.furymc\\).",
             "Erreur FuryMc Launcher",
             JOptionPane.ERROR_MESSAGE);
     }
