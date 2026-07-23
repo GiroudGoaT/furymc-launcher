@@ -14,8 +14,8 @@ import java.util.regex.Pattern;
  * mod release to the next):
  * <ul>
  * <li><b>base</b> - JRE8/libraries/natives/assets. Published rarely (see assemble-base-bundle.ps1).
- * <li><b>mod</b> - the mod jar + instance config. Published on every version bump (see
- * assemble-bundle.ps1).
+ * <li><b>mod</b> - a patched library jar (the mod merged in) + game-dir config. Published on every
+ * version bump (see assemble-bundle.ps1).
  * </ul>
  *
  * <p>

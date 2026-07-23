@@ -25,11 +25,11 @@ import java.util.zip.ZipFile;
  * <ul>
  * <li><b>base</b> ({@link #BASE_VERSION_FILE_NAME}) - JRE8/libraries/natives/Mojang assets. This is the
  * ~300 MB part that essentially never changes, so it's fetched once and then left alone.
- * <li><b>mod</b> ({@link #VERSION_FILE_NAME}) - instance config plus a patched library jar (the mod's
+ * <li><b>mod</b> ({@link #VERSION_FILE_NAME}) - game-dir config plus a patched library jar (the mod's
  * classes/assets are merged into one of the ordinary libraries/ jars at build time - see
- * tools/assemble-bundle.ps1 - so this track can overwrite files under both installDir/instance/ and
- * installDir/libraries/). This is the few-MB part that changes on every release, fetched again whenever
- * the version bumps.
+ * tools/assemble-bundle.ps1 - so this track can overwrite files directly under both installDir/ and
+ * installDir/libraries/, the layout is flat - see GameLauncher). This is the few-MB part that changes on
+ * every release, fetched again whenever the version bumps.
  * </ul>
  *
  * See VersionManifest for the manifest shape and the launcher project's tools/ scripts for how each zip

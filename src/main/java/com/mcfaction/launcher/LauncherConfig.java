@@ -28,7 +28,9 @@ public class LauncherConfig {
         String appData = System.getenv("APPDATA");
         Path base = appData != null ? Path.of(appData) : Path.of(System.getProperty("user.home"));
         configDir = base.resolve(APP_FOLDER_NAME);
-        installDir = configDir.resolve("instance");
+        // Flat layout, matching comparable third-party clients (Velthar, Vanadia): everything - JRE,
+        // libraries, the actual game dir - lives directly under .furymc, no "instance" wrapper folder.
+        installDir = configDir;
         ensureVisibleConfigDir();
         load();
     }
@@ -36,7 +38,7 @@ public class LauncherConfig {
     /**
      * The leading dot is just a naming convention on Windows (unlike Unix, it does not hide anything
      * by itself). Deliberately kept un-hidden (dos:hidden = false, not just "not set") so a player can
-     * reach it from Explorer - e.g. to drop files into instance/instance/resourcepacks/ - without
+     * reach it from Explorer - e.g. to drop files into resourcepacks/ - without
      * enabling "show hidden files". Explicitly clearing the attribute (rather than just never setting
      * it) also un-hides folders left over from before this was the behavior. Best-effort only: never
      * worth failing launcher startup over.

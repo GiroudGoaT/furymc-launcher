@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -13,7 +14,8 @@ import java.util.List;
  * into one of the ordinary library jars (see tools/assemble-bundle.ps1) at build time, so FML discovers
  * it the same way it discovers any classpath-resident mod (ModDiscoverer#findClasspathMods /
  * CoreModManager's per-jar manifest scan for FMLCorePlugin), with nothing extra for a player to find or
- * drop a file into.
+ * drop a file into. FML's own "mods" directory is neutralized separately, at the bytecode level (see
+ * tools/PatchCoreModManager.java) - it never touches installDir at all any more.
  *
  * <p>
  * The classpath itself is built from an explicit manifest (installDir/libraries.txt, shipped inside
@@ -21,16 +23,19 @@ import java.util.List;
  * the directory would let anyone add an extra jar to libraries/ and have it silently picked up.
  *
  * <p>
- * Expects the bundle layout produced by tools/assemble-bundle.ps1 and tools/assemble-base-bundle.ps1:
+ * Expects the flat bundle layout produced by tools/assemble-bundle.ps1 and
+ * tools/assemble-base-bundle.ps1 - deliberately a single directory, matching how comparable third-party
+ * clients (Velthar, Vanadia) lay theirs out, with no "instance" wrapper folder to tell apart install
+ * content from game content:
  *
  * <pre>
- * installDir/
+ * installDir/                (== the game dir passed to Minecraft directly - no separate nesting)
  *   jre8/bin/java.exe
  *   libraries/*.jar        (flat - every runtime dependency jar, Forge+MC jar included, mod content merged in)
  *   libraries.txt           (fixed, ordered list of the exact filenames above - the classpath source of truth)
  *   natives/                (Windows LWJGL/JInput natives)
  *   assets/                 (Mojang 1.7.10 assets: indexes/, objects/)
- *   instance/               (the actual game dir: config/, saves/, options.txt, ...)
+ *   config/, saves/, resourcepacks/, options.txt, ...  (ordinary game content, created/used by Minecraft itself)
  * </pre>
  */
 public class GameLauncher {
@@ -45,12 +50,13 @@ public class GameLauncher {
         Path librariesManifest = installDir.resolve("libraries.txt");
         Path nativesDir = installDir.resolve("natives");
         Path assetsDir = installDir.resolve("assets");
-        Path gameDir = installDir.resolve("instance");
+        Path gameDir = installDir;
 
         if (!Files.isExecutable(javaExe)) {
             throw new LauncherException("Bundled Java runtime not found at " + javaExe);
         }
 
+        migrateLegacyNestedGameDir(installDir);
         removeStaleModLayout(gameDir);
 
         List<String> command = new ArrayList<>();
@@ -139,6 +145,52 @@ public class GameLauncher {
         }
         // Trailing separator is harmless - the JVM ignores an empty classpath entry.
         return classpath.toString();
+    }
+
+    /**
+     * One-time migration for installs from before the game dir was flattened into installDir directly:
+     * moves everything out of the old installDir/instance/ (config/, saves/, resourcepacks/, options.txt,
+     * ...) up into installDir itself, then removes the now-empty instance/ folder. Runs on every launch
+     * but is a no-op once migrated (the old folder won't exist any more). Existing filenames win over the
+     * migrated ones (shouldn't happen - the two layouts don't share names - but a player's world data is
+     * not something to silently clobber if it somehow does).
+     */
+    private void migrateLegacyNestedGameDir(Path installDir) {
+        Path legacyGameDir = installDir.resolve("instance");
+        if (!Files.isDirectory(legacyGameDir)) {
+            return;
+        }
+        boolean allMoved;
+        try (var children = Files.list(legacyGameDir)) {
+            allMoved = children.allMatch(child -> {
+                Path target = installDir.resolve(child.getFileName());
+                if (Files.exists(target)) {
+                    // Shouldn't happen (the two layouts don't share names), but if it ever does, leave
+                    // both the source and the pre-existing target alone rather than guessing which one
+                    // to keep - this one child stays un-migrated and legacyGameDir stays around too.
+                    return false;
+                }
+                try {
+                    Files.move(child, target, StandardCopyOption.ATOMIC_MOVE);
+                    return true;
+                } catch (IOException e) {
+                    return false;
+                }
+            });
+        } catch (IOException ignored) {
+            return;
+        }
+        // Only remove the legacy folder once everything's been moved out of it - if anything was
+        // skipped or failed above, it's left in place (still fully playable via the legacy path on this
+        // launch) instead of deleting data we didn't actually migrate.
+        if (!allMoved) {
+            return;
+        }
+        try {
+            Files.delete(legacyGameDir);
+        } catch (IOException ignored) {
+            // Leftover empty dir here is harmless clutter, not worth failing the launch over.
+        }
     }
 
     /**
