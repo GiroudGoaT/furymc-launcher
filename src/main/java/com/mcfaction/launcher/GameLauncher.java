@@ -56,8 +56,7 @@ public class GameLauncher {
             throw new LauncherException("Bundled Java runtime not found at " + javaExe);
         }
 
-        migrateLegacyNestedGameDir(installDir);
-        removeStaleModLayout(gameDir);
+        cleanStaleLayout(installDir);
 
         List<String> command = new ArrayList<>();
         command.add(javaExe.toAbsolutePath()
@@ -94,13 +93,12 @@ public class GameLauncher {
             builder.redirectOutput(gameDir.resolve("launcher_last_run.log")
                 .toFile());
             builder.redirectErrorStream(true);
-            Process process = builder.start();
-            // FML re-creates an empty mods/ dir itself on every launch regardless of what we do (it
-            // doesn't NPE without one, confirmed empirically, so we no longer pre-create it either) -
-            // clean it back up once the game closes so there's nothing left on disk between sessions.
-            process.onExit()
-                .thenRun(() -> removeStaleModLayout(gameDir));
-            return process;
+            // Deliberately no post-exit cleanup here: FuryMcLauncher closes its own window (and with it,
+            // this JVM) right after the game process starts - a Process.onExit() callback registered here
+            // would almost never actually run, since nothing keeps this process alive for the hours the
+            // game itself might run. cleanStaleLayout() runs unconditionally at launcher startup instead
+            // (see FuryMcLauncher.startUpdateSequence) - that's the reliable place for it.
+            return builder.start();
         } catch (IOException e) {
             throw new LauncherException("Could not start the game process", e);
         }
@@ -145,6 +143,17 @@ public class GameLauncher {
         }
         // Trailing separator is harmless - the JVM ignores an empty classpath entry.
         return classpath.toString();
+    }
+
+    /**
+     * Migrates any legacy nested game dir and removes any stale mod/mods folder. Safe to call every time
+     * regardless of install state (both steps are no-ops once already clean) - called unconditionally at
+     * launcher startup (see FuryMcLauncher.startUpdateSequence), not just around an actual game launch,
+     * since that's the one place guaranteed to run every time the app opens.
+     */
+    public void cleanStaleLayout(Path installDir) {
+        migrateLegacyNestedGameDir(installDir);
+        removeStaleModLayout(installDir);
     }
 
     /**

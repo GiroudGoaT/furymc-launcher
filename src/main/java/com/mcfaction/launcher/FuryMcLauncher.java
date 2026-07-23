@@ -78,7 +78,7 @@ public class FuryMcLauncher extends JFrame {
     // version.json's launcherVersion/launcherJarUrl/launcherJarSha256, whenever the launcher's own code
     // changes (not game content - that's MANIFEST_URL's version/modUrl, unrelated to this). See
     // SelfUpdater: this is the only place that needs a manual "reinstall the .exe" step ever again.
-    private static final String LAUNCHER_VERSION = "1.3.5";
+    private static final String LAUNCHER_VERSION = "1.3.6";
 
     private static final Dimension LOADING_SIZE = new Dimension(420, 580);
     private static final Dimension MAIN_SIZE = new Dimension(1100, 620);
@@ -431,6 +431,9 @@ public class FuryMcLauncher extends JFrame {
                 }
 
                 Path installDir = config.getInstallDir();
+                // Runs unconditionally on every startup, not just around an actual game launch - see
+                // GameLauncher#cleanStaleLayout javadoc for why this is the one place guaranteed to run.
+                gameLauncher.cleanStaleLayout(installDir);
                 if (updateManager.needsBaseUpdate(installDir, manifest)) {
                     publish("Téléchargement des fichiers du jeu (première installation)...");
                     updateManager.downloadAndInstallBase(
