@@ -29,21 +29,24 @@ public class LauncherConfig {
         Path base = appData != null ? Path.of(appData) : Path.of(System.getProperty("user.home"));
         configDir = base.resolve(APP_FOLDER_NAME);
         installDir = configDir.resolve("instance");
-        hideConfigDir();
+        ensureVisibleConfigDir();
         load();
     }
 
     /**
      * The leading dot is just a naming convention on Windows (unlike Unix, it does not hide anything
-     * by itself) - the actual DOS "hidden" attribute is what keeps this out of Explorer by default.
-     * Best-effort only: never worth failing launcher startup over.
+     * by itself). Deliberately kept un-hidden (dos:hidden = false, not just "not set") so a player can
+     * reach it from Explorer - e.g. to drop files into instance/instance/resourcepacks/ - without
+     * enabling "show hidden files". Explicitly clearing the attribute (rather than just never setting
+     * it) also un-hides folders left over from before this was the behavior. Best-effort only: never
+     * worth failing launcher startup over.
      */
-    private void hideConfigDir() {
+    private void ensureVisibleConfigDir() {
         try {
             Files.createDirectories(configDir);
-            Files.setAttribute(configDir, "dos:hidden", true);
+            Files.setAttribute(configDir, "dos:hidden", false);
         } catch (Exception e) {
-            // Not fatal - worst case the folder is just visible, still fully functional.
+            // Not fatal - worst case the folder keeps whatever visibility it already had.
         }
     }
 

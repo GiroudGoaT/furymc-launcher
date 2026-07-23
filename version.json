@@ -1,12 +1,12 @@
 {
-  "version": "1.0.39",
-  "modUrl": "https://github.com/GiroudGoaT/furymc-launcher/releases/download/v1.0.39/update.zip",
-  "modSha256": "f50a277ec2bb6240b09ae4ed7f0d8464e44ca46bba179993496cea25ae96f5de",
+  "version": "1.0.40",
+  "modUrl": "https://github.com/GiroudGoaT/furymc-launcher/releases/download/v1.0.40/update.zip",
+  "modSha256": "1b610ff3b013c1f66d7e94f8411152a6778f02c40700d32066fe2fdf78443a65",
   "baseVersion": "2",
   "baseUrl": "https://github.com/GiroudGoaT/furymc-launcher/releases/download/base-v2/base.zip",
   "baseSha256": "6d70d2d018ffbd72adf5f0f25a09030619f84c1d681e7e4b341bfe53c2b46c38",
-  "launcherVersion": "1.3.3",
-  "launcherJarUrl": "https://github.com/GiroudGoaT/furymc-launcher/releases/download/launcher-v1.3.3/furymc-launcher.jar",
-  "launcherJarSha256": "ebd6c1b3d7cb73b3944421baf12001f5001ae85595e95a0be83e6bcd2db71821",
+  "launcherVersion": "1.3.4",
+  "launcherJarUrl": "https://github.com/GiroudGoaT/furymc-launcher/releases/download/launcher-v1.3.4/furymc-launcher.jar",
+  "launcherJarSha256": "9d985a2ee3c447face0912c7f468ed5b4f03cf461c7b4e9ef28c9816962a5f37",
   "serverAddress": "51.255.167.101:25565"
 }

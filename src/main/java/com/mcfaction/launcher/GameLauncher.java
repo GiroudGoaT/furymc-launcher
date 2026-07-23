@@ -9,18 +9,16 @@ import java.util.List;
 
 /**
  * Builds and runs the exact java invocation validated by hand for this project: LaunchWrapper +
- * FMLTweaker, with the mod jar placed directly on the classpath (never in a mods/ folder). FML 1.7.10
- * discovers classpath-resident mods on its own (ModDiscoverer#findClasspathMods) with no ASM patching
- * needed - confirmed empirically, a real client successfully connected and joined a real server this
- * way. mods/ is still created (FML throws a NullPointerException in CoreModManager if it doesn't exist
- * when scanning starts) but is deliberately left empty and never referenced otherwise: there is no
- * folder here a player can drop an extra jar into and have it loaded by this launcher.
+ * FMLTweaker. There is no mod jar anywhere on disk - factionaddon's classes/assets are baked directly
+ * into one of the ordinary library jars (see tools/assemble-bundle.ps1) at build time, so FML discovers
+ * it the same way it discovers any classpath-resident mod (ModDiscoverer#findClasspathMods /
+ * CoreModManager's per-jar manifest scan for FMLCorePlugin), with nothing extra for a player to find or
+ * drop a file into.
  *
  * <p>
  * The classpath itself is built from an explicit manifest (installDir/libraries.txt, shipped inside
  * base.zip by tools/assemble-base-bundle.ps1) rather than by listing whatever's in libraries/ - listing
- * the directory would just move the same "drop a file in a folder, get it loaded" problem from mods/ to
- * libraries/.
+ * the directory would let anyone add an extra jar to libraries/ and have it silently picked up.
  *
  * <p>
  * Expects the bundle layout produced by tools/assemble-bundle.ps1 and tools/assemble-base-bundle.ps1:
@@ -28,13 +26,11 @@ import java.util.List;
  * <pre>
  * installDir/
  *   jre8/bin/java.exe
- *   libraries/*.jar        (flat - every runtime dependency jar, Forge+MC jar included)
+ *   libraries/*.jar        (flat - every runtime dependency jar, Forge+MC jar included, mod content merged in)
  *   libraries.txt           (fixed, ordered list of the exact filenames above - the classpath source of truth)
  *   natives/                (Windows LWJGL/JInput natives)
  *   assets/                 (Mojang 1.7.10 assets: indexes/, objects/)
  *   instance/               (the actual game dir: config/, saves/, options.txt, ...)
- *     mod/factionaddon.jar  (the mod jar - fixed filename, on the classpath, never in mods/)
- *     mods/                 (kept empty - see class comment)
  * </pre>
  */
 public class GameLauncher {
@@ -50,23 +46,12 @@ public class GameLauncher {
         Path nativesDir = installDir.resolve("natives");
         Path assetsDir = installDir.resolve("assets");
         Path gameDir = installDir.resolve("instance");
-        Path modsDir = gameDir.resolve("mods");
-        Path modJar = gameDir.resolve("mod/factionaddon.jar");
 
         if (!Files.isExecutable(javaExe)) {
             throw new LauncherException("Bundled Java runtime not found at " + javaExe);
         }
-        if (!Files.isRegularFile(modJar)) {
-            throw new LauncherException("Mod jar not found at " + modJar + " - the update may not have installed correctly");
-        }
 
-        try {
-            // FML throws a NullPointerException in CoreModManager if this doesn't already exist when
-            // launched - see class comment. Deliberately left empty otherwise.
-            Files.createDirectories(modsDir);
-        } catch (IOException e) {
-            throw new LauncherException("Could not prepare the game directory", e);
-        }
+        removeStaleModLayout(gameDir);
 
         List<String> command = new ArrayList<>();
         command.add(javaExe.toAbsolutePath()
@@ -74,7 +59,7 @@ public class GameLauncher {
         command.add("-Xmx" + ramMb + "M");
         command.add("-Djava.library.path=" + nativesDir.toAbsolutePath());
         command.add("-cp");
-        command.add(buildClasspath(librariesDir, librariesManifest, modJar));
+        command.add(buildClasspath(librariesDir, librariesManifest));
         command.add(MAIN_CLASS);
         command.add("--username");
         command.add(username);
@@ -103,7 +88,13 @@ public class GameLauncher {
             builder.redirectOutput(gameDir.resolve("launcher_last_run.log")
                 .toFile());
             builder.redirectErrorStream(true);
-            return builder.start();
+            Process process = builder.start();
+            // FML re-creates an empty mods/ dir itself on every launch regardless of what we do (it
+            // doesn't NPE without one, confirmed empirically, so we no longer pre-create it either) -
+            // clean it back up once the game closes so there's nothing left on disk between sessions.
+            process.onExit()
+                .thenRun(() -> removeStaleModLayout(gameDir));
+            return process;
         } catch (IOException e) {
             throw new LauncherException("Could not start the game process", e);
         }
@@ -111,10 +102,10 @@ public class GameLauncher {
 
     /**
      * Builds the classpath from the fixed {@code libraries.txt} manifest instead of listing
-     * {@code librariesDir}'s actual contents - see class comment for why (this is the whole point of
-     * the mods/-folder fix: don't reintroduce the same problem one directory over).
+     * {@code librariesDir}'s actual contents - listing the directory would let anyone drop an extra jar
+     * in there and have it silently picked up, which is exactly what this bundle format avoids.
      */
-    private String buildClasspath(Path librariesDir, Path librariesManifest, Path modJar) {
+    private String buildClasspath(Path librariesDir, Path librariesManifest) {
         if (!Files.isDirectory(librariesDir)) {
             throw new LauncherException("Libraries folder not found at " + librariesDir);
         }
@@ -146,8 +137,34 @@ public class GameLauncher {
         if (classpath.length() == 0) {
             throw new LauncherException("libraries.txt is empty");
         }
-
-        classpath.append(modJar.toAbsolutePath());
+        // Trailing separator is harmless - the JVM ignores an empty classpath entry.
         return classpath.toString();
+    }
+
+    /**
+     * Deletes the old instance/mod (fixed factionaddon.jar) and instance/mods (kept empty for FML) dirs
+     * left behind by installs from before the mod was merged into a library jar - see class comment.
+     * Best-effort: a leftover empty dir isn't worth failing the launch over.
+     */
+    private void removeStaleModLayout(Path gameDir) {
+        for (String stale : new String[] { "mod", "mods" }) {
+            Path dir = gameDir.resolve(stale);
+            try {
+                if (Files.isDirectory(dir)) {
+                    try (var walk = Files.walk(dir)) {
+                        walk.sorted(java.util.Comparator.reverseOrder())
+                            .forEach(p -> {
+                                try {
+                                    Files.deleteIfExists(p);
+                                } catch (IOException ignored) {
+                                    // Best-effort - see method javadoc.
+                                }
+                            });
+                    }
+                }
+            } catch (IOException ignored) {
+                // Best-effort - see method javadoc.
+            }
+        }
     }
 }
