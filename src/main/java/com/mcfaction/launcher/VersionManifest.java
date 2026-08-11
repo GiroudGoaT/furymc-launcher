@@ -37,6 +37,8 @@ import java.util.regex.Pattern;
  *   "launcherVersion": "1.1.0",
  *   "launcherJarUrl": "https://github.com/.../releases/download/launcher-v1.1.0/furymc-launcher.jar",
  *   "launcherJarSha256": "...",
+ *   "launcherNativeZipUrl": "https://github.com/.../releases/download/launcher-v1.1.0/FuryMc-Launcher-native.zip",
+ *   "launcherNativeZipSha256": "...",
  *   "serverAddress": "host:25565"
  * }
  * </pre>
@@ -52,11 +54,14 @@ public class VersionManifest {
     private final String launcherVersion;
     private final String launcherJarUrl;
     private final String launcherJarSha256;
+    private final String launcherNativeZipUrl;
+    private final String launcherNativeZipSha256;
     private final String serverAddress;
 
     private VersionManifest(String version, String modUrl, String modSha256, String baseVersion,
         String baseUrl, String baseSha256, String launcherVersion, String launcherJarUrl,
-        String launcherJarSha256, String serverAddress) {
+        String launcherJarSha256, String launcherNativeZipUrl, String launcherNativeZipSha256,
+        String serverAddress) {
         this.version = version;
         this.modUrl = modUrl;
         this.modSha256 = modSha256;
@@ -66,6 +71,8 @@ public class VersionManifest {
         this.launcherVersion = launcherVersion;
         this.launcherJarUrl = launcherJarUrl;
         this.launcherJarSha256 = launcherJarSha256;
+        this.launcherNativeZipUrl = launcherNativeZipUrl;
+        this.launcherNativeZipSha256 = launcherNativeZipSha256;
         this.serverAddress = serverAddress;
     }
 
@@ -79,13 +86,16 @@ public class VersionManifest {
         String launcherVersion = extract(json, "launcherVersion");
         String launcherJarUrl = extract(json, "launcherJarUrl");
         String launcherJarSha256 = extract(json, "launcherJarSha256");
+        String launcherNativeZipUrl = extract(json, "launcherNativeZipUrl");
+        String launcherNativeZipSha256 = extract(json, "launcherNativeZipSha256");
         String serverAddress = extract(json, "serverAddress");
         if (version == null || modUrl == null || baseVersion == null || baseUrl == null) {
             throw new LauncherException(
                 "Update manifest is missing required fields (version/modUrl/baseVersion/baseUrl)");
         }
         return new VersionManifest(version, modUrl, modSha256, baseVersion, baseUrl, baseSha256,
-            launcherVersion, launcherJarUrl, launcherJarSha256, serverAddress);
+            launcherVersion, launcherJarUrl, launcherJarSha256, launcherNativeZipUrl,
+            launcherNativeZipSha256, serverAddress);
     }
 
     private static String extract(String json, String field) {
@@ -128,6 +138,14 @@ public class VersionManifest {
 
     public String getLauncherJarSha256() {
         return launcherJarSha256;
+    }
+
+    public String getLauncherNativeZipUrl() {
+        return launcherNativeZipUrl;
+    }
+
+    public String getLauncherNativeZipSha256() {
+        return launcherNativeZipSha256;
     }
 
     public String getServerAddress() {

@@ -39,6 +39,7 @@ public class UpdateManager {
 
     private static final String VERSION_FILE_NAME = "version.txt";
     private static final String BASE_VERSION_FILE_NAME = "base-version.txt";
+    private static final String NATIVE_APP_VERSION_FILE_NAME = "launcher-native-version.txt";
     private final HttpClient httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(15))
         .followRedirects(HttpClient.Redirect.NORMAL)
@@ -69,6 +70,18 @@ public class UpdateManager {
 
     public boolean needsModUpdate(Path installDir, VersionManifest remote) {
         return needsUpdate(installDir, VERSION_FILE_NAME, remote.getVersion());
+    }
+
+    /**
+     * Used by {@link Stub} (the native-image single-exe entry point) to check its own cached copy of
+     * the Swing app (FuryMc-Launcher.exe + AWT DLLs) against {@code launcherVersion} - the same
+     * version field {@link SelfUpdater} already checks for the jar-based distributions, just applied
+     * to a locally-cached directory instead of an in-place jar swap (a native-image exe launched from
+     * inside a self-extracting wrapper has no reliable "self" to overwrite in place, see Stub's class
+     * comment).
+     */
+    public boolean needsNativeAppUpdate(Path cacheDir, VersionManifest remote) {
+        return needsUpdate(cacheDir, NATIVE_APP_VERSION_FILE_NAME, remote.getLauncherVersion());
     }
 
     private boolean needsUpdate(Path installDir, String versionFileName, String remoteVersion) {
@@ -104,6 +117,18 @@ public class UpdateManager {
             remote.getModSha256(),
             VERSION_FILE_NAME,
             remote.getVersion(),
+            listener);
+    }
+
+    /** Downloads+extracts a fresh copy of the Swing app (FuryMc-Launcher-native.zip) into the given
+     *  cache directory - see {@link #needsNativeAppUpdate}. */
+    public void downloadAndInstallNativeApp(Path cacheDir, VersionManifest remote, ProgressListener listener) {
+        downloadAndInstall(
+            cacheDir,
+            remote.getLauncherNativeZipUrl(),
+            remote.getLauncherNativeZipSha256(),
+            NATIVE_APP_VERSION_FILE_NAME,
+            remote.getLauncherVersion(),
             listener);
     }
 
