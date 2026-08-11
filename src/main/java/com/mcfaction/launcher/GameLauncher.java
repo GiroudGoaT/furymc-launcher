@@ -9,13 +9,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Builds and runs the exact java invocation validated by hand for this project: LaunchWrapper +
- * FMLTweaker. There is no mod jar anywhere on disk - factionaddon's classes/assets are baked directly
- * into one of the ordinary library jars (see tools/assemble-bundle.ps1) at build time, so FML discovers
- * it the same way it discovers any classpath-resident mod (ModDiscoverer#findClasspathMods /
- * CoreModManager's per-jar manifest scan for FMLCorePlugin), with nothing extra for a player to find or
- * drop a file into. FML's own "mods" directory is neutralized separately, at the bytecode level (see
- * tools/PatchCoreModManager.java) - it never touches installDir at all any more.
+ * Builds and runs the exact java invocation validated by hand for this project: a plain vanilla
+ * {@code net.minecraft.client.main.Main} launch, no LaunchWrapper/FML/Forge anywhere. FuryMc's own
+ * content (the net.minecraft.furymc package, plus every vanilla class it patches directly) is baked
+ * into libraries/furymc-client.jar - a straight jar of client-dev's own compiled bin/minecraft output
+ * (see tools/assemble-bundle.ps1) - listed first on the classpath, ahead of the plain vanilla
+ * libraries/1.7.10.jar, so our patched classes shadow the unpatched vanilla ones of the same name
+ * (mirrors the ordering client-dev's own runtime/startclient.py classpath uses: compiled output before
+ * the vanilla jar).
  *
  * <p>
  * The classpath itself is built from an explicit manifest (installDir/libraries.txt, shipped inside
@@ -31,7 +32,7 @@ import java.util.List;
  * <pre>
  * installDir/                (== the game dir passed to Minecraft directly - no separate nesting)
  *   jre8/bin/java.exe
- *   libraries/*.jar        (flat - every runtime dependency jar, Forge+MC jar included, mod content merged in)
+ *   libraries/*.jar        (flat - furymc-client.jar first, then every vanilla runtime dependency jar)
  *   libraries.txt           (fixed, ordered list of the exact filenames above - the classpath source of truth)
  *   natives/                (Windows LWJGL/JInput natives)
  *   assets/                 (Mojang 1.7.10 assets: indexes/, objects/)
@@ -40,8 +41,7 @@ import java.util.List;
  */
 public class GameLauncher {
 
-    private static final String MAIN_CLASS = "net.minecraft.launchwrapper.Launch";
-    private static final String TWEAK_CLASS = "cpw.mods.fml.common.launcher.FMLTweaker";
+    private static final String MAIN_CLASS = "net.minecraft.client.main.Main";
     private static final String MC_VERSION = "1.7.10";
 
     public Process launch(Path installDir, String username, String uuid, int ramMb) {
@@ -84,8 +84,6 @@ public class GameLauncher {
         command.add("0");
         command.add("--userProperties");
         command.add("{}");
-        command.add("--tweakClass");
-        command.add(TWEAK_CLASS);
 
         try {
             ProcessBuilder builder = new ProcessBuilder(command);
