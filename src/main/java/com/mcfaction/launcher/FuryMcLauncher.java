@@ -118,7 +118,7 @@ public class FuryMcLauncher extends JFrame {
     private float lastNonZeroVolume = 0.7F;
 
     public FuryMcLauncher() {
-        super("FuryMc Launcher");
+        super("FuryMc");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setResizable(false);
         setUndecorated(true);

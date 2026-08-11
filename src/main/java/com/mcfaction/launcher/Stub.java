@@ -33,7 +33,7 @@ public final class Stub {
     // Kept as its own copy rather than shared with FuryMcLauncher's identical constant - pulling in
     // any part of that class here would drag Swing into this exe's native-image build.
     private static final String MANIFEST_URL = "https://raw.githubusercontent.com/GiroudGoaT/furymc-launcher/main/version.json";
-    private static final String APP_EXE_NAME = "FuryMc-Launcher.exe";
+    private static final String APP_EXE_NAME = "FuryMc.exe";
 
     public static void main(String[] args) {
         try {
