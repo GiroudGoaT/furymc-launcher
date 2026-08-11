@@ -997,7 +997,12 @@ public class FuryMcLauncher extends JFrame {
         SettingsDialog(JFrame owner, LauncherConfig config) {
             super(owner, "Paramètres", true);
             setUndecorated(true);
-            setBackground(new Color(0, 0, 0, 0));
+            // Deliberately no setBackground(alpha=0) here (unlike the alpha-less setShape-only pattern
+            // used by the main window at line ~186): a fully transparent background forces AWT into
+            // Windows' PERPIXEL_TRANSLUCENT path, which routes through sun.awt.windows.TranslucentWindowPainter -
+            // a class that throws NoSuchMethodError in this GraalVM native-image build (missing native
+            // JNI method binding), freezing the AWT event thread entirely. setShape() alone (below) still
+            // gives the rounded-corner clip via the simpler PERPIXEL_TRANSPARENT path, which works fine.
 
             RoundedPanel content = new RoundedPanel();
             content.setLayout(new GridBagLayout());
