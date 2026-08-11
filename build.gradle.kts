@@ -68,3 +68,44 @@ tasks.register<Exec>("packageExe") {
     }
     commandLine(args)
 }
+
+// Produces a real Windows installer (Start Menu + Desktop shortcuts, clean uninstall via "Programs and
+// Features") instead of just the portable app-image folder above - what a new player should actually
+// download, matching how comparable launchers (Velthar, Vanadia, CKGames) distribute themselves.
+//
+// Requires WiX Toolset v7+ on PATH (jpackage drives `wix.exe build` directly on JDK 25, no more
+// candle.exe/light.exe v3 CLI). WiX v7 introduced an "Open Source Maintenance Fee" EULA gate
+// (error WIX7015 until accepted) - free under $10k/year revenue, accept once per machine/user with
+// `wix.exe eula accept wix7` before running this task.
+//
+// --win-per-user-install: installs under %LocalAppData%, no admin/UAC needed - NOT jpackage's default
+// (which is a system-wide install under Program Files).
+// --win-menu-group: controls the Start Menu subfolder name - --vendor does NOT do this (it only sets
+// the "Publisher" field in Programs and Features), a real gotcha the first time this was set up.
+tasks.register<Exec>("packageInstallerExe") {
+    dependsOn(tasks.jar)
+    doFirst {
+        delete("build/dist-installer")
+    }
+    val args = mutableListOf(
+        jpackage,
+        "--type", "exe",
+        "--name", "FuryMc Launcher",
+        "--app-version", project.findProperty("launcherVersion")?.toString() ?: "1.0.0",
+        "--vendor", "FuryMc",
+        "--win-menu-group", "FuryMc",
+        "--input", "build/libs",
+        "--main-jar", "${project.name}.jar",
+        "--main-class", "com.mcfaction.launcher.FuryMcLauncher",
+        "--dest", "build/dist-installer",
+        "--win-shortcut",
+        "--win-menu",
+        "--win-per-user-install"
+    )
+    val icon = file("src/main/resources/launcher_icon.ico")
+    if (icon.exists()) {
+        args.add("--icon")
+        args.add(icon.absolutePath)
+    }
+    commandLine(args)
+}
