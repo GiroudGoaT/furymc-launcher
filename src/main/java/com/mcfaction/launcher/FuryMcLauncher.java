@@ -824,6 +824,14 @@ public class FuryMcLauncher extends JFrame {
                 line.close();
             } catch (LineUnavailableException e) {
                 // No music is a cosmetic loss, not worth failing the launcher over.
+            } catch (Throwable t) {
+                // Same reasoning as above, just widened to Throwable: a GraalVM native-image build
+                // throws a plain java.lang.Error ("Can't find java.home") from deep inside
+                // AudioSystem's service-provider lookup (com.sun.media.sound.JSSecurityManager
+                // assumes a real JDK install with a resolvable java.home, which a native image
+                // doesn't have) instead of the checked LineUnavailableException above - on a plain
+                // `java -jar` launch this path is never hit, but this thread's own uncaught
+                // exceptions still shouldn't ever surface as a fatal launcher error either way.
             }
         }
 
@@ -1204,6 +1212,25 @@ public class FuryMcLauncher extends JFrame {
     }
 
     public static void main(String[] args) {
+        // Must be the very first thing that runs, before any AWT/Swing class is touched: a
+        // GraalVM native-image build of this class defaults java.awt.headless to true (unlike a
+        // plain `java -jar` launch, which correctly auto-detects the real desktop session) -
+        // GraphicsEnvironment caches the headless flag in a static initializer on first use, so
+        // setting this after any AWT class has loaded would be too late.
+        System.setProperty("java.awt.headless", "false");
+
+        // Same native-image-only gap: a native image has no real JDK install, so java.home comes
+        // back null. javax.sound.sampled's service-provider lookup (com.sun.media.sound.
+        // JSSecurityManager) throws a plain Error ("Can't find java.home ??") the instant it's
+        // null, before it even gets to gracefully handling a missing <java.home>/conf/sound.
+        // properties file - any non-null path satisfies that check (the sound.properties read
+        // itself already tolerates not finding the file). MusicPlayer.run()'s own Throwable catch
+        // is the real safety net if this property trick ever stops being enough on some future
+        // GraalVM version - see its comment.
+        if (System.getProperty("java.home") == null) {
+            System.setProperty("java.home", System.getProperty("user.dir"));
+        }
+
         // A jpackage app-image has no console attached when double-clicked, so an uncaught exception
         // here would otherwise vanish completely - the exact "nothing happens when I open it" symptom
         // this is meant to rule out. Anything that goes wrong from this point on, on any thread, gets a
