@@ -2,6 +2,8 @@ package com.mcfaction.launcher;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -10,9 +12,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Enumeration;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -132,33 +136,86 @@ public class UpdateManager {
             listener);
     }
 
+    private static final int MAX_ATTEMPTS = 3;
+
     private void downloadAndInstall(Path installDir, String url, String expectedSha256, String versionFileName,
         String newVersion, ProgressListener listener) {
+        Path downloadTarget = installDir.resolveSibling("download.zip");
+        Exception lastFailure = null;
+
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            try {
+                Files.createDirectories(installDir);
+                // A previous failed attempt (this loop, or an earlier launcher run that crashed/was
+                // killed mid-update) can leave a stale/partial download.zip behind - always start clean
+                // rather than risk resuming into or unzipping a truncated file.
+                Files.deleteIfExists(downloadTarget);
+
+                String progressPrefix = attempt > 1 ? "Nouvel essai (" + attempt + "/" + MAX_ATTEMPTS + ")... " : "";
+                listener.onProgress(0, progressPrefix + "Téléchargement de la mise à jour...");
+                downloadWithProgress(url, downloadTarget, listener);
+
+                if (expectedSha256 != null && !expectedSha256.isBlank()) {
+                    listener.onProgress(-1, "Vérification du fichier...");
+                    verifyChecksum(downloadTarget, expectedSha256);
+                }
+
+                listener.onProgress(-1, "Installation...");
+                extractZip(downloadTarget, installDir, listener);
+
+                Files.writeString(installDir.resolve(versionFileName), newVersion);
+                Files.deleteIfExists(downloadTarget);
+                return;
+            } catch (Exception e) {
+                lastFailure = e;
+                logFailure(installDir, url, attempt, e);
+                if (attempt < MAX_ATTEMPTS) {
+                    try {
+                        Thread.sleep(2000L * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread()
+                            .interrupt();
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Surfacing the real cause's own message (not just the generic wrapper) so the error the player
+        // sees/reports is actually actionable - see launcher-error.log for the full stack trace of every
+        // attempt.
+        String detail = lastFailure != null && lastFailure.getMessage() != null ? lastFailure.getMessage() : "raison inconnue";
+        throw new LauncherException("Échec de la mise à jour (" + detail + ") - voir launcher-error.log", lastFailure);
+    }
+
+    /** Appends a timestamped stack trace to installDir/launcher-error.log - best-effort, never lets a
+     *  logging failure mask the real update error. */
+    private void logFailure(Path installDir, String url, int attempt, Exception e) {
         try {
             Files.createDirectories(installDir);
-            Path downloadTarget = installDir.resolveSibling("download.zip");
-
-            listener.onProgress(0, "Téléchargement de la mise à jour...");
-            downloadWithProgress(url, downloadTarget, listener);
-
-            if (expectedSha256 != null && !expectedSha256.isBlank()) {
-                listener.onProgress(-1, "Vérification du fichier...");
-                verifyChecksum(downloadTarget, expectedSha256);
-            }
-
-            listener.onProgress(-1, "Installation...");
-            extractZip(downloadTarget, installDir, listener);
-
-            Files.writeString(installDir.resolve(versionFileName), newVersion);
-            Files.deleteIfExists(downloadTarget);
-        } catch (IOException e) {
-            throw new LauncherException("Échec de la mise à jour", e);
+            StringWriter trace = new StringWriter();
+            e.printStackTrace(new PrintWriter(trace));
+            String entry = "[" + Instant.now() + "] Update attempt " + attempt + "/" + MAX_ATTEMPTS + " failed (url=" + url + ")\n"
+                + trace + "\n";
+            Files.writeString(
+                installDir.resolve("launcher-error.log"),
+                entry,
+                StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.APPEND);
+        } catch (IOException ignored) {
+            // Logging is best-effort - losing the log entry shouldn't hide/replace the real failure.
         }
     }
 
     private void downloadWithProgress(String url, Path target, ProgressListener listener) throws IOException {
         try {
             HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                // Covers the whole transfer, not just the connect phase - large enough for the ~300MB
+                // base bundle on a slow connection, but still bounded so a truly stalled/dead connection
+                // (captive portal, GitHub hiccup) fails and retries instead of hanging the launcher
+                // forever (this request previously had no timeout at all).
+                .timeout(Duration.ofMinutes(10))
                 .GET()
                 .build();
             HttpResponse<InputStream> response = httpClient
