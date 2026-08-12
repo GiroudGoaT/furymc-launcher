@@ -46,6 +46,12 @@ val jpackage = javaToolchains.launcherFor(java.toolchain)
     .installationPath
     .asFile.resolve("bin/jpackage").absolutePath
 
+// --name "FuryMc" (NOT "FuryMc Launcher") is load-bearing: this app-image is what gets zipped and fed
+// to Stub.java's auto-updater, which looks for a flat "FuryMc.exe" (Stub#APP_EXE_NAME) directly at the
+// zip root. A "FuryMc Launcher" name here produces "FuryMc Launcher.exe" nested under a
+// "FuryMc Launcher/" folder instead - the stub silently fails to find/launch it and, having no fallback
+// to the still-good cached copy, the whole app appears to not open at all (see the v1.4.3 incident:
+// PROJECT_STATUS.md / commit reverting launcherVersion back to 1.4.2).
 tasks.register<Exec>("packageExe") {
     dependsOn(tasks.jar)
     doFirst {
@@ -54,7 +60,7 @@ tasks.register<Exec>("packageExe") {
     val args = mutableListOf(
         jpackage,
         "--type", "app-image",
-        "--name", "FuryMc Launcher",
+        "--name", "FuryMc",
         "--app-version", project.findProperty("launcherVersion")?.toString() ?: "1.0.0",
         "--input", "build/libs",
         "--main-jar", "${project.name}.jar",

@@ -39,11 +39,22 @@ public final class Stub {
         try {
             Path cacheDir = resolveCacheDir();
             Files.createDirectories(cacheDir);
+            Path appExe = cacheDir.resolve(APP_EXE_NAME);
 
             UpdateManager updateManager = new UpdateManager();
-            VersionManifest manifest = updateManager.fetchManifest(MANIFEST_URL);
+            VersionManifest manifest;
+            try {
+                manifest = updateManager.fetchManifest(MANIFEST_URL);
+            } catch (RuntimeException e) {
+                // Can't even reach the manifest (offline, GitHub hiccup) - if a cached copy already
+                // works, that's still strictly better than refusing to launch at all.
+                if (Files.isRegularFile(appExe)) {
+                    launch(cacheDir, appExe, args);
+                    return;
+                }
+                throw e;
+            }
 
-            Path appExe = cacheDir.resolve(APP_EXE_NAME);
             boolean missing = !Files.isRegularFile(appExe);
             boolean outdated = manifest.getLauncherNativeZipUrl() != null
                 && updateManager.needsNativeAppUpdate(cacheDir, manifest);
@@ -53,10 +64,23 @@ public final class Stub {
                     throw new LauncherException(
                         "No cached app found and the update manifest has no launcherNativeZipUrl yet");
                 }
-                updateManager.downloadAndInstallNativeApp(
-                    cacheDir,
-                    manifest,
-                    (percent, status) -> System.out.println(status));
+                try {
+                    updateManager.downloadAndInstallNativeApp(
+                        cacheDir,
+                        manifest,
+                        (percent, status) -> System.out.println(status));
+                } catch (RuntimeException e) {
+                    // A bad/broken update (corrupt download, wrong package layout, transient network
+                    // failure...) must never brick an already-working install - see the v1.4.3 incident,
+                    // where this exact gap turned one bad release into "the launcher doesn't open at all"
+                    // for every player, with no way to fall back. Only escalate if there's truly nothing
+                    // to launch.
+                    if (Files.isRegularFile(appExe)) {
+                        System.err.println("Mise à jour échouée, on garde la version déjà installée : " + e);
+                    } else {
+                        throw e;
+                    }
+                }
             }
 
             launch(cacheDir, appExe, args);
