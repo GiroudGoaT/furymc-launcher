@@ -81,7 +81,12 @@ public class FuryMcLauncher extends JFrame {
     //
     // 1.4.0: GameLauncher now launches the standalone MCP client (net.minecraft.client.main.Main)
     // instead of the old Forge/LaunchWrapper+FMLTweaker path - see GameLauncher.java's class comment.
-    private static final String LAUNCHER_VERSION = "1.4.0";
+    //
+    // This was left stuck at "1.4.0" for a long time while version.json's launcherVersion moved on
+    // (1.4.4) - since SelfUpdater compares the two unconditionally on every startup, that mismatch made
+    // it attempt the self-update jar-swap-and-relaunch dance on literally every single launch, not just
+    // once after an actual update. Bump this alongside launcherVersion in version.json from now on.
+    private static final String LAUNCHER_VERSION = "1.4.5";
 
     private static final Dimension LOADING_SIZE = new Dimension(420, 580);
     private static final Dimension MAIN_SIZE = new Dimension(1100, 620);

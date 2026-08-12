@@ -112,8 +112,12 @@ public class SelfUpdater {
      */
     private void launchSwapScript(Path currentJar, Path newJar) throws IOException {
         Path appDir = currentJar.getParent();
+        // "FuryMc.exe" - matches Stub.java's APP_EXE_NAME, the actual cached filename under
+        // %LocalAppData%\FuryMc\bin\ since the Phase 6sexies rename. This used to say
+        // "FuryMc Launcher.exe" (the older jpackage app-image's stub name), which no longer exists on
+        // disk for the native-stub distribution - relaunch then failed with "Windows can't find...".
         Path exe = appDir.getParent()
-            .resolve("FuryMc Launcher.exe");
+            .resolve("FuryMc.exe");
         Path script = Files.createTempFile("furymc-launcher-update-", ".bat");
 
         String content = "@echo off\r\n" + ":wait\r\n" + "copy /y \"" + newJar + "\" \"" + currentJar
