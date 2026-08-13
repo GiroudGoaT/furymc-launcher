@@ -9,6 +9,6 @@
   "launcherJarUrl": "https://github.com/GiroudGoaT/furymc-launcher/releases/download/launcher-v1.4.0/furymc-launcher.jar",
   "launcherJarSha256": "2d79341b28002aeb4540d17e2725ff9eece54e48049792e02b8ad31f686de85c",
   "launcherNativeZipUrl": "https://github.com/GiroudGoaT/furymc-launcher/releases/download/launcher-v1.4.5/FuryMc-Launcher-native.zip",
-  "launcherNativeZipSha256": "442b54bb26b3fc8c444a6fcbe19062f3cbedd3159ef554fc342e8a35c9d970a6",
+  "launcherNativeZipSha256": "4444be06fc8322d08a7cc0c41f392722904b3335e04601a3b34162cd20981edb",
   "serverAddress": "51.255.167.101:25565"
 }
