@@ -1,7 +1,7 @@
 {
-  "version": "1.3.55",
-  "modUrl": "https://github.com/GiroudGoaT/furymc-launcher/releases/download/v1.3.55/update.zip",
-  "modSha256": "0321d1fe4bed57fff62dbf153a339e379f19a41bc1c4460b2262fa88db333742",
+  "version": "1.3.56",
+  "modUrl": "https://github.com/GiroudGoaT/furymc-launcher/releases/download/v1.3.56/update.zip",
+  "modSha256": "0bd7257deae7f2fec71313c9c420e22246b4a5988bf825fd3f5ee8c6011ef70a",
   "baseVersion": "5",
   "baseUrl": "https://github.com/GiroudGoaT/furymc-launcher/releases/download/base-v5/base.zip",
   "baseSha256": "0766a7c1fa874ac3f273ec61859112591a6d4944727a2016f655d0ba397abd3f",
