@@ -145,9 +145,9 @@ public class GameLauncher {
 
     /**
      * Migrates any legacy nested game dir and removes any stale mod/mods folder. Safe to call every time
-     * regardless of install state (both steps are no-ops once already clean) - called unconditionally at
-     * launcher startup (see FuryMcLauncher.startUpdateSequence), not just around an actual game launch,
-     * since that's the one place guaranteed to run every time the app opens.
+     * regardless of install state (both steps are no-ops once already clean) - called from {@link #launch}
+     * itself right before building the process, so it always runs ahead of an actual game start without
+     * needing a separate call site.
      */
     public void cleanStaleLayout(Path installDir) {
         migrateLegacyNestedGameDir(installDir);

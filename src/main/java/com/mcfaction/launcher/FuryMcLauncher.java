@@ -60,10 +60,12 @@ import javax.swing.Timer;
  * splitting a small Swing screen across many files.
  *
  * <p>
- * Two cards on a CardLayout: {@link #CARD_LOADING} (small window, shown first - runs the self-update
- * check, then the base/mod update-and-download) and {@link #CARD_MAIN} (the frame is resized up to
- * {@link #MAIN_SIZE} at this point - pseudo, Jouer, Param&egrave;tres). By the time the player can
- * click Jouer, the install is already up to date, so that button just launches the game directly.
+ * Two cards on a CardLayout: {@link #CARD_LOADING} (small window, shown first - only checks whether the
+ * launcher app itself is outdated, see {@link #startUpdateSequence()}) and {@link #CARD_MAIN} (the frame
+ * is resized up to {@link #MAIN_SIZE} at this point - pseudo, Jouer, Param&egrave;tres). The game's own
+ * files (base install + mod updates) are deliberately NOT checked here - that happens on demand when the
+ * player clicks Jouer (see {@link #onPlay()}), same as most other server launchers: open fast, only pay
+ * the download cost when actually starting a game.
  *
  * <p>
  * Undecorated (no native title bar - see {@link #applyRoundedShape()} and {@link #enableDragging}), so
@@ -86,15 +88,16 @@ public class FuryMcLauncher extends JFrame {
     // (1.4.4) - since SelfUpdater compares the two unconditionally on every startup, that mismatch made
     // it attempt the self-update jar-swap-and-relaunch dance on literally every single launch, not just
     // once after an actual update. Bump this alongside launcherVersion in version.json from now on.
-    private static final String LAUNCHER_VERSION = "1.4.5";
+    private static final String LAUNCHER_VERSION = "1.4.6";
 
     private static final Dimension LOADING_SIZE = new Dimension(420, 580);
     private static final Dimension MAIN_SIZE = new Dimension(1100, 620);
     private static final int CORNER_RADIUS = 22;
 
-    // However fast the update check actually finishes, the loading screen stays up at least this
-    // long - purely cosmetic (see Timer usage in startUpdateSequence).
-    private static final int MIN_LOADING_DISPLAY_MS = 10_000;
+    // However fast the (now much lighter - just a manifest fetch, no game-file download) launcher
+    // self-update check finishes, the loading screen stays up at least this long - purely cosmetic, just
+    // enough to avoid an instant flash between window sizes (see Timer usage in startUpdateSequence).
+    private static final int MIN_LOADING_DISPLAY_MS = 600;
 
     private static final String CARD_LOADING = "loading";
     private static final String CARD_MAIN = "main";
@@ -385,6 +388,10 @@ public class FuryMcLauncher extends JFrame {
         popup.show(profileButton, 16, profileButton.getHeight() + 6);
     }
 
+    /** Checks for game-file updates (base install + mod), downloads whatever's missing/outdated, then
+     *  launches - all triggered by the Jouer click itself rather than eagerly at startup (see class
+     *  javadoc). The status label next to the button doubles as the progress display for both the update
+     *  check and any download, then finally the actual game launch. */
     private void onPlay() {
         String username = config.getUsername();
         if (username.isEmpty()) {
@@ -394,14 +401,40 @@ public class FuryMcLauncher extends JFrame {
         }
 
         playButton.setEnabled(false);
-        mainStatusLabel.setText("Lancement du jeu...");
+        mainStatusLabel.setText("Vérification des mises à jour...");
 
-        new SwingWorker<Void, Void>() {
+        new SwingWorker<Void, String>() {
 
             @Override
-            protected Void doInBackground() {
-                gameLauncher.launch(config.getInstallDir(), username, config.getOrCreateUuid(), config.getRamMb());
+            protected Void doInBackground() throws Exception {
+                Path installDir = config.getInstallDir();
+                VersionManifest manifest = updateManager.fetchManifest(MANIFEST_URL);
+
+                if (updateManager.needsBaseUpdate(installDir, manifest)) {
+                    publish("Téléchargement des fichiers du jeu (première installation)...");
+                    updateManager.downloadAndInstallBase(
+                        installDir,
+                        manifest,
+                        (percent, status) -> publish(status));
+                }
+                if (updateManager.needsModUpdate(installDir, manifest)) {
+                    publish("Téléchargement de la mise à jour...");
+                    updateManager.downloadAndInstallMod(
+                        installDir,
+                        manifest,
+                        (percent, status) -> publish(status));
+                }
+
+                publish("Lancement du jeu...");
+                // GameLauncher#launch calls cleanStaleLayout itself right before building the process -
+                // no need to also call it here.
+                gameLauncher.launch(installDir, username, config.getOrCreateUuid(), config.getRamMb());
                 return null;
+            }
+
+            @Override
+            protected void process(List<String> chunks) {
+                mainStatusLabel.setText(chunks.get(chunks.size() - 1));
             }
 
             @Override
@@ -420,15 +453,16 @@ public class FuryMcLauncher extends JFrame {
         }.execute();
     }
 
-    /** Runs once at startup: self-update check first (see SelfUpdater), then the base/mod
-     *  update-and-download - the loading card stays up for both (at least MIN_LOADING_DISPLAY_MS), so
-     *  by the time the player sees the main card and can click Jouer, everything is already current. */
+    /** Runs once at startup: only checks whether the launcher app itself is outdated and, if so,
+     *  downloads + applies the update and relaunches (see SelfUpdater) - it deliberately does NOT touch
+     *  the game's own files here any more, see class javadoc. The loading card stays up for at least
+     *  MIN_LOADING_DISPLAY_MS purely so the transition to the main card doesn't flash instantly. */
     private void startUpdateSequence() {
         retryButton.setVisible(false);
-        loadingStatusLabel.setText("Recherche de mise à jour...");
+        loadingStatusLabel.setText("Vérification du launcher...");
         long startedAt = System.currentTimeMillis();
 
-        new SwingWorker<Boolean, String>() {
+        new SwingWorker<Boolean, Void>() {
 
             @Override
             protected Boolean doInBackground() throws Exception {
@@ -437,30 +471,7 @@ public class FuryMcLauncher extends JFrame {
                     // A relaunch is already in flight via SelfUpdater's helper script.
                     return null;
                 }
-
-                Path installDir = config.getInstallDir();
-                // Runs unconditionally on every startup, not just around an actual game launch - see
-                // GameLauncher#cleanStaleLayout javadoc for why this is the one place guaranteed to run.
-                gameLauncher.cleanStaleLayout(installDir);
-                if (updateManager.needsBaseUpdate(installDir, manifest)) {
-                    publish("Téléchargement des fichiers du jeu (première installation)...");
-                    updateManager.downloadAndInstallBase(
-                        installDir,
-                        manifest,
-                        (percent, status) -> publish(status));
-                }
-                if (updateManager.needsModUpdate(installDir, manifest)) {
-                    updateManager.downloadAndInstallMod(
-                        installDir,
-                        manifest,
-                        (percent, status) -> publish(status));
-                }
                 return true;
-            }
-
-            @Override
-            protected void process(List<String> chunks) {
-                loadingStatusLabel.setText(chunks.get(chunks.size() - 1));
             }
 
             @Override
