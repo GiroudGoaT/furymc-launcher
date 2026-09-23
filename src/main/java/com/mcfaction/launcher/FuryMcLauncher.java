@@ -96,7 +96,7 @@ public class FuryMcLauncher extends JFrame {
     // (1.4.4) - since SelfUpdater compares the two unconditionally on every startup, that mismatch made
     // it attempt the self-update jar-swap-and-relaunch dance on literally every single launch, not just
     // once after an actual update. Bump this alongside launcherVersion in version.json from now on.
-    private static final String LAUNCHER_VERSION = "1.4.11";
+    private static final String LAUNCHER_VERSION = "1.4.12";
 
     private static final Dimension LOADING_SIZE = new Dimension(420, 580);
     private static final Dimension MAIN_SIZE = new Dimension(1100, 620);
@@ -484,28 +484,33 @@ public class FuryMcLauncher extends JFrame {
         }
     }
 
+    /** GridBagLayout here too (see buildSidebar's javadoc for why) - the previous BoxLayout version only
+     *  got mainStatusLabel's width/alignment fixed last round, not progressBar's, since progressBar is
+     *  invisible by default (see GameProgressBar) and so its misalignment wasn't visible until the
+     *  player actually clicked Jouer. Both rows are gridx=0/weightx=1/fill=HORIZONTAL now, so both are
+     *  guaranteed to span the exact same width as everything else in the sidebar. */
     private JPanel buildStatusBlock() {
-        JPanel block = new JPanel();
-        block.setLayout(new BoxLayout(block, BoxLayout.Y_AXIS));
+        JPanel block = new JPanel(new GridBagLayout());
         block.setOpaque(false);
         block.setPreferredSize(new Dimension(SIDEBAR_CONTENT_WIDTH, 30));
-        block.setMaximumSize(new Dimension(SIDEBAR_CONTENT_WIDTH, 30));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.weightx = 1.0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
 
         mainStatusLabel = new JLabel("Prêt à jouer", SwingConstants.CENTER);
         mainStatusLabel.setForeground(INK_DIM);
         mainStatusLabel.setFont(new Font("Segoe UI", Font.BOLD, 10));
-        mainStatusLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        mainStatusLabel.setPreferredSize(new Dimension(SIDEBAR_CONTENT_WIDTH, 16));
-        mainStatusLabel.setMaximumSize(mainStatusLabel.getPreferredSize());
-        block.add(mainStatusLabel);
-
-        block.add(Box.createVerticalStrut(8));
+        gbc.gridy = 0;
+        gbc.insets = new Insets(0, 0, 8, 0);
+        block.add(mainStatusLabel, gbc);
 
         progressBar = new GameProgressBar();
         progressBar.setPreferredSize(new Dimension(SIDEBAR_CONTENT_WIDTH, 5));
-        progressBar.setMaximumSize(progressBar.getPreferredSize());
-        progressBar.setAlignmentX(Component.LEFT_ALIGNMENT);
-        block.add(progressBar);
+        gbc.gridy = 1;
+        gbc.insets = new Insets(0, 0, 0, 0);
+        block.add(progressBar, gbc);
 
         return block;
     }
@@ -1544,6 +1549,11 @@ public class FuryMcLauncher extends JFrame {
 
             add(text, BorderLayout.CENTER);
 
+            // Swing dispatches a mouse event to the single deepest component under the cursor, not to
+            // every ancestor - a listener on the card alone only fires while the mouse is over its own
+            // uncovered padding, going dead the moment it crosses onto the icon tile or the text (which
+            // together cover most of the card's area, see player feedback: "hover doesn't work over
+            // certain zones"). Attaching the same listener to every child closes those dead zones.
             MouseAdapter hoverListener = new MouseAdapter() {
 
                 @Override
@@ -1561,6 +1571,10 @@ public class FuryMcLauncher extends JFrame {
                 }
             };
             addMouseListener(hoverListener);
+            tile.addMouseListener(hoverListener);
+            text.addMouseListener(hoverListener);
+            titleLabel.addMouseListener(hoverListener);
+            descLabel.addMouseListener(hoverListener);
         }
 
         @Override
