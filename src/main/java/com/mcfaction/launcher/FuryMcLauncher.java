@@ -95,7 +95,7 @@ public class FuryMcLauncher extends JFrame {
     // (1.4.4) - since SelfUpdater compares the two unconditionally on every startup, that mismatch made
     // it attempt the self-update jar-swap-and-relaunch dance on literally every single launch, not just
     // once after an actual update. Bump this alongside launcherVersion in version.json from now on.
-    private static final String LAUNCHER_VERSION = "1.4.15";
+    private static final String LAUNCHER_VERSION = "1.4.16";
 
     private static final Dimension LOADING_SIZE = new Dimension(420, 580);
     private static final Dimension MAIN_SIZE = new Dimension(1100, 620);
@@ -191,7 +191,7 @@ public class FuryMcLauncher extends JFrame {
      *  borderless so they blend into the background instead of reading as their own button. Only on the
      *  main card - the loading card shows none at all. */
     private JPanel buildWindowControls() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 1));
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 1));
         panel.setOpaque(false);
 
         JButton minimizeButton = new WindowControlButton(false);
@@ -925,7 +925,9 @@ public class FuryMcLauncher extends JFrame {
             setFocusPainted(false);
             setBorderPainted(false);
             setContentAreaFilled(false);
-            setPreferredSize(new Dimension(32, 24));
+            setPreferredSize(new Dimension(26, 26));
+            setMaximumSize(getPreferredSize());
+            setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
             addMouseListener(new MouseAdapter() {
 
                 @Override
@@ -947,18 +949,27 @@ public class FuryMcLauncher extends JFrame {
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-            g2.setColor(
-                hovered ? (isClose ? new Color(0xE0, 0x6A, 0x6A) : Color.WHITE)
-                    : new Color(255, 255, 255, 170));
-            g2.setStroke(new java.awt.BasicStroke(1.4F));
             int w = getWidth();
             int h = getHeight();
-            int pad = w / 3;
+            int d = Math.min(w, h) - 1;
+            int cx = (w - d) / 2;
+            int cy = (h - d) / 2;
+
+            g2.setColor(
+                hovered ? (isClose ? new Color(0xE0, 0x5A, 0x5A) : new Color(255, 255, 255, 46))
+                    : new Color(255, 255, 255, 16));
+            g2.fillOval(cx, cy, d, d);
+            g2.setColor(new Color(255, 255, 255, hovered ? 70 : 30));
+            g2.drawOval(cx, cy, d, d);
+
+            g2.setColor(hovered ? Color.WHITE : new Color(255, 255, 255, 190));
+            g2.setStroke(new java.awt.BasicStroke(1.4F));
+            int pad = d / 3;
             if (isClose) {
-                g2.drawLine(pad, h / 2 - w / 6, w - pad, h / 2 + w / 6);
-                g2.drawLine(w - pad, h / 2 - w / 6, pad, h / 2 + w / 6);
+                g2.drawLine(cx + pad, cy + pad, cx + d - pad, cy + d - pad);
+                g2.drawLine(cx + d - pad, cy + pad, cx + pad, cy + d - pad);
             } else {
-                g2.drawLine(pad, h / 2, w - pad, h / 2);
+                g2.drawLine(cx + pad, cy + d / 2, cx + d - pad, cy + d / 2);
             }
             g2.dispose();
         }
