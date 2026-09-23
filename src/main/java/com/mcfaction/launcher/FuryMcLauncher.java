@@ -96,7 +96,7 @@ public class FuryMcLauncher extends JFrame {
     // (1.4.4) - since SelfUpdater compares the two unconditionally on every startup, that mismatch made
     // it attempt the self-update jar-swap-and-relaunch dance on literally every single launch, not just
     // once after an actual update. Bump this alongside launcherVersion in version.json from now on.
-    private static final String LAUNCHER_VERSION = "1.4.12";
+    private static final String LAUNCHER_VERSION = "1.4.13";
 
     private static final Dimension LOADING_SIZE = new Dimension(420, 580);
     private static final Dimension MAIN_SIZE = new Dimension(1100, 620);
@@ -393,7 +393,7 @@ public class FuryMcLauncher extends JFrame {
         JPanel row = new JPanel();
         row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
         row.setOpaque(false);
-        row.setPreferredSize(new Dimension(SIDEBAR_CONTENT_WIDTH, 38));
+        row.setPreferredSize(new Dimension(SIDEBAR_CONTENT_WIDTH, 44));
         row.setMaximumSize(row.getPreferredSize());
 
         SidebarIconButton folderButton = new SidebarIconButton(SidebarIconButton.Glyph.FOLDER);
@@ -1283,7 +1283,7 @@ public class FuryMcLauncher extends JFrame {
 
         SidebarIconButton(Glyph glyph) {
             this.glyph = glyph;
-            setPreferredSize(new Dimension(38, 38));
+            setPreferredSize(new Dimension(44, 44));
             setContentAreaFilled(false);
             setBorderPainted(false);
             setFocusPainted(false);
@@ -1320,11 +1320,11 @@ public class FuryMcLauncher extends JFrame {
                 // Same visual language as PlayButton - a solid violet/gold shape rather than a thin
                 // outline glyph, so this reads as belonging to the same DA (see player feedback asking
                 // for "a real folder icon, same colours as the Jouer button").
-                float left = w * 0.2F;
-                float right = w * 0.8F;
-                float bodyTop = h * 0.42F;
-                float bottom = h * 0.72F;
-                float tabTop = h * 0.32F;
+                float left = w * 0.12F;
+                float right = w * 0.88F;
+                float bodyTop = h * 0.34F;
+                float bottom = h * 0.8F;
+                float tabTop = h * 0.22F;
 
                 java.awt.geom.Path2D.Float folder = new java.awt.geom.Path2D.Float();
                 folder.moveTo(left, tabTop);
