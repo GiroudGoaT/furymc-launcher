@@ -96,7 +96,7 @@ public class FuryMcLauncher extends JFrame {
     // (1.4.4) - since SelfUpdater compares the two unconditionally on every startup, that mismatch made
     // it attempt the self-update jar-swap-and-relaunch dance on literally every single launch, not just
     // once after an actual update. Bump this alongside launcherVersion in version.json from now on.
-    private static final String LAUNCHER_VERSION = "1.4.10";
+    private static final String LAUNCHER_VERSION = "1.4.11";
 
     private static final Dimension LOADING_SIZE = new Dimension(420, 580);
     private static final Dimension MAIN_SIZE = new Dimension(1100, 620);
@@ -267,64 +267,78 @@ public class FuryMcLauncher extends JFrame {
         return panel;
     }
 
+    /** GridBagLayout instead of BoxLayout - every row gets gridx=0/weightx=1/fill=HORIZONTAL, which
+     *  guarantees each one is stretched to the EXACT same column width (the sidebar's real content
+     *  width) regardless of that row's own natural preferred size. BoxLayout's per-child
+     *  alignmentX/maximumSize combination used here previously left just enough ambiguity for the field
+     *  box, Jouer button and icon row to end up narrower than - and not sharing a center with - the
+     *  logo above them (see the player's screenshot feedback); GridBagLayout's column model doesn't
+     *  leave room for that kind of drift. */
     private JPanel buildSidebar() {
         SidebarPanel sidebar = new SidebarPanel();
         sidebar.setPreferredSize(new Dimension(SIDEBAR_WIDTH, 10));
-        sidebar.setLayout(new BoxLayout(sidebar, BoxLayout.Y_AXIS));
+        sidebar.setLayout(new GridBagLayout());
         sidebar.setBorder(BorderFactory.createEmptyBorder(26, SIDEBAR_PAD_H, 22, SIDEBAR_PAD_H));
 
-        JLabel buildTag = new JLabel("FuryMc · 1.7.10");
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.weightx = 1.0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        int row = 0;
+
+        JLabel buildTag = new JLabel("FuryMc · 1.7.10", SwingConstants.CENTER);
         buildTag.setFont(new Font("Segoe UI", Font.BOLD, 10));
         buildTag.setForeground(INK_DIM);
-        buildTag.setAlignmentX(Component.LEFT_ALIGNMENT);
-        sidebar.add(buildTag);
+        gbc.gridy = row++;
+        gbc.insets = new Insets(0, 0, 28, 0);
+        sidebar.add(buildTag, gbc);
 
-        sidebar.add(Box.createVerticalStrut(28));
+        JLabel logoLabel = new JLabel(scaledIcon(loadImage("/logo.png"), (int) (SIDEBAR_CONTENT_WIDTH * 0.8)), SwingConstants.CENTER);
+        logoLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        gbc.gridy = row++;
+        gbc.insets = new Insets(0, 0, 2, 0);
+        sidebar.add(logoLabel, gbc);
 
-        JLabel logoLabel = new JLabel(scaledIcon(loadImage("/logo.png"), (int) (SIDEBAR_CONTENT_WIDTH * 0.8)));
-        logoLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        sidebar.add(logoLabel);
-
-        sidebar.add(Box.createVerticalStrut(2));
-
-        JLabel sloganLabel = new JLabel("Si tu veux la paix, prépare la guerre");
+        JLabel sloganLabel = new JLabel("Si tu veux la paix, prépare la guerre", SwingConstants.CENTER);
         sloganLabel.setFont(new Font("Segoe UI", Font.ITALIC, 12));
         sloganLabel.setForeground(INK_DIM);
-        sloganLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        sidebar.add(sloganLabel);
-
-        sidebar.add(Box.createVerticalStrut(30));
+        gbc.gridy = row++;
+        gbc.insets = new Insets(0, 0, 30, 0);
+        sidebar.add(sloganLabel, gbc);
 
         JLabel fieldLabel = new JLabel("PSEUDONYME");
         fieldLabel.setFont(new Font("Segoe UI", Font.BOLD, 10));
         fieldLabel.setForeground(GOLD_DIM);
-        fieldLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        sidebar.add(fieldLabel);
+        gbc.gridy = row++;
+        gbc.insets = new Insets(0, 0, 8, 0);
+        sidebar.add(fieldLabel, gbc);
 
-        sidebar.add(Box.createVerticalStrut(8));
-
-        JPanel pseudoBox = buildPseudoField();
-        pseudoBox.setAlignmentX(Component.LEFT_ALIGNMENT);
-        sidebar.add(pseudoBox);
-
-        sidebar.add(Box.createVerticalStrut(16));
+        gbc.gridy = row++;
+        gbc.insets = new Insets(0, 0, 16, 0);
+        sidebar.add(buildPseudoField(), gbc);
 
         playButton = new PlayButton("JOUER");
-        playButton.setAlignmentX(Component.LEFT_ALIGNMENT);
         playButton.addActionListener(e -> onPlay());
-        sidebar.add(playButton);
+        gbc.gridy = row++;
+        gbc.insets = new Insets(0, 0, 14, 0);
+        sidebar.add(playButton, gbc);
 
-        sidebar.add(Box.createVerticalStrut(14));
+        gbc.gridy = row++;
+        gbc.insets = new Insets(0, 0, 0, 0);
+        sidebar.add(buildIconRow(), gbc);
 
-        JPanel iconRow = buildIconRow();
-        iconRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-        sidebar.add(iconRow);
+        // Eats all remaining vertical space, pushing the status block below it down to the bottom of
+        // the sidebar - the one row that needs to actually grow, so weighty is set only here.
+        gbc.gridy = row++;
+        gbc.weighty = 1.0;
+        gbc.fill = GridBagConstraints.BOTH;
+        sidebar.add(Box.createGlue(), gbc);
+        gbc.weighty = 0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
 
-        sidebar.add(Box.createVerticalGlue());
-
-        JPanel statusBlock = buildStatusBlock();
-        statusBlock.setAlignmentX(Component.LEFT_ALIGNMENT);
-        sidebar.add(statusBlock);
+        gbc.gridy = row++;
+        gbc.insets = new Insets(0, 0, 0, 0);
+        sidebar.add(buildStatusBlock(), gbc);
 
         return sidebar;
     }
@@ -477,10 +491,12 @@ public class FuryMcLauncher extends JFrame {
         block.setPreferredSize(new Dimension(SIDEBAR_CONTENT_WIDTH, 30));
         block.setMaximumSize(new Dimension(SIDEBAR_CONTENT_WIDTH, 30));
 
-        mainStatusLabel = new JLabel("Prêt à jouer");
+        mainStatusLabel = new JLabel("Prêt à jouer", SwingConstants.CENTER);
         mainStatusLabel.setForeground(INK_DIM);
         mainStatusLabel.setFont(new Font("Segoe UI", Font.BOLD, 10));
-        mainStatusLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        mainStatusLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        mainStatusLabel.setPreferredSize(new Dimension(SIDEBAR_CONTENT_WIDTH, 16));
+        mainStatusLabel.setMaximumSize(mainStatusLabel.getPreferredSize());
         block.add(mainStatusLabel);
 
         block.add(Box.createVerticalStrut(8));
@@ -1295,14 +1311,37 @@ public class FuryMcLauncher extends JFrame {
             g2.setColor(new Color(255, 255, 255, 20));
             g2.drawRoundRect(0, 0, w - 1, h - 1, 10, 10);
 
-            g2.setColor(hovered ? GOLD : INK_DIM);
-            g2.setStroke(new BasicStroke(1.7F));
             if (glyph == Glyph.FOLDER) {
-                int pad = w / 4;
-                g2.drawRoundRect(pad - 2, h / 2 - 2, w - 2 * pad + 4, h / 3, 3, 3);
-                g2.drawLine(pad, h / 2 - 2, pad + 5, h / 2 - 7);
-                g2.drawLine(pad + 5, h / 2 - 7, pad + 12, h / 2 - 7);
-                g2.drawLine(pad + 12, h / 2 - 7, pad + 15, h / 2 - 2);
+                // Same visual language as PlayButton - a solid violet/gold shape rather than a thin
+                // outline glyph, so this reads as belonging to the same DA (see player feedback asking
+                // for "a real folder icon, same colours as the Jouer button").
+                float left = w * 0.2F;
+                float right = w * 0.8F;
+                float bodyTop = h * 0.42F;
+                float bottom = h * 0.72F;
+                float tabTop = h * 0.32F;
+
+                java.awt.geom.Path2D.Float folder = new java.awt.geom.Path2D.Float();
+                folder.moveTo(left, tabTop);
+                folder.lineTo(left + (right - left) * 0.28F, tabTop);
+                folder.lineTo(left + (right - left) * 0.42F, bodyTop);
+                folder.lineTo(right, bodyTop);
+                folder.lineTo(right, bottom);
+                folder.lineTo(left, bottom);
+                folder.closePath();
+
+                g2.setPaint(
+                    new LinearGradientPaint(
+                        0,
+                        bodyTop,
+                        0,
+                        bottom,
+                        new float[] {0F, 1F},
+                        new Color[] {hovered ? GOLD_DIM : PURPLE_DEEP, PURPLE_DARK}));
+                g2.fill(folder);
+                g2.setColor(hovered ? GOLD : new Color(GOLD.getRed(), GOLD.getGreen(), GOLD.getBlue(), 150));
+                g2.setStroke(new BasicStroke(1.4F));
+                g2.draw(folder);
             }
 
             g2.dispose();
@@ -1313,12 +1352,31 @@ public class FuryMcLauncher extends JFrame {
      *  in for a server switcher since FuryMc only has the one server. */
     private static class ServerPill extends JComponent {
 
+        private static final Color DOT_COLOR = new Color(0x6F, 0xE0, 0x8A);
+
         private final String text;
+        private float dotAlpha = 1F;
+        private boolean fadingOut = true;
 
         ServerPill(String text) {
             this.text = text;
             setFont(new Font("Segoe UI", Font.BOLD, 12));
             setOpaque(false);
+
+            // Gentle breathing pulse rather than a hard on/off blink - a live-status indicator, not an
+            // alert, so it shouldn't read as urgent.
+            Timer pulse = new Timer(40, e -> {
+                dotAlpha += fadingOut ? -0.03F : 0.03F;
+                if (dotAlpha <= 0.35F) {
+                    dotAlpha = 0.35F;
+                    fadingOut = false;
+                } else if (dotAlpha >= 1F) {
+                    dotAlpha = 1F;
+                    fadingOut = true;
+                }
+                repaint();
+            });
+            pulse.start();
         }
 
         @Override
@@ -1341,7 +1399,8 @@ public class FuryMcLauncher extends JFrame {
             g2.setColor(new Color(GOLD.getRed(), GOLD.getGreen(), GOLD.getBlue(), 46));
             g2.drawRoundRect(0, 0, w - 1, h - 1, h, h);
 
-            g2.setColor(new Color(0x6F, 0xE0, 0x8A));
+            g2.setColor(
+                new Color(DOT_COLOR.getRed(), DOT_COLOR.getGreen(), DOT_COLOR.getBlue(), Math.round(255 * dotAlpha)));
             g2.fillOval(14, h / 2 - 3, 7, 7);
 
             g2.setFont(getFont());
@@ -1358,11 +1417,27 @@ public class FuryMcLauncher extends JFrame {
      *  once one exists (see the TODO where this is instantiated). */
     private static class DiscordPill extends JComponent {
 
+        private boolean hovered;
+
         DiscordPill() {
             setFont(new Font("Segoe UI", Font.BOLD, 11));
             setOpaque(false);
             setPreferredSize(new Dimension(96, 28));
             setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+            addMouseListener(new MouseAdapter() {
+
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    hovered = true;
+                    repaint();
+                }
+
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    hovered = false;
+                    repaint();
+                }
+            });
         }
 
         @Override
@@ -1372,9 +1447,10 @@ public class FuryMcLauncher extends JFrame {
 
             int w = getWidth();
             int h = getHeight();
-            g2.setPaint(new LinearGradientPaint(0, 0, w, h, new float[] {0F, 1F}, new Color[] {PURPLE_DEEP, PURPLE_DARK}));
+            Color top = hovered ? GOLD_DIM : PURPLE_DEEP;
+            g2.setPaint(new LinearGradientPaint(0, 0, w, h, new float[] {0F, 1F}, new Color[] {top, PURPLE_DARK}));
             g2.fillRoundRect(0, 0, w - 1, h - 1, h, h);
-            g2.setColor(new Color(GOLD.getRed(), GOLD.getGreen(), GOLD.getBlue(), 110));
+            g2.setColor(hovered ? GOLD : new Color(GOLD.getRed(), GOLD.getGreen(), GOLD.getBlue(), 110));
             g2.drawRoundRect(0, 0, w - 1, h - 1, h, h);
 
             g2.setFont(getFont());
