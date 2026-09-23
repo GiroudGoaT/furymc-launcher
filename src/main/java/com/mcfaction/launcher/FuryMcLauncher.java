@@ -95,7 +95,7 @@ public class FuryMcLauncher extends JFrame {
     // (1.4.4) - since SelfUpdater compares the two unconditionally on every startup, that mismatch made
     // it attempt the self-update jar-swap-and-relaunch dance on literally every single launch, not just
     // once after an actual update. Bump this alongside launcherVersion in version.json from now on.
-    private static final String LAUNCHER_VERSION = "1.4.14";
+    private static final String LAUNCHER_VERSION = "1.4.15";
 
     private static final Dimension LOADING_SIZE = new Dimension(420, 580);
     private static final Dimension MAIN_SIZE = new Dimension(1100, 620);
@@ -981,6 +981,7 @@ public class FuryMcLauncher extends JFrame {
             setBorderPainted(false);
             setContentAreaFilled(false);
             setPreferredSize(new Dimension(32, 32));
+            setMaximumSize(getPreferredSize());
             addMouseListener(new MouseAdapter() {
 
                 @Override
@@ -1036,6 +1037,7 @@ public class FuryMcLauncher extends JFrame {
         VolumeBar(float initialValue) {
             this.value = initialValue;
             setPreferredSize(new Dimension(90, 32));
+            setMaximumSize(getPreferredSize());
             setOpaque(false);
 
             MouseAdapter handler = new MouseAdapter() {
@@ -1178,32 +1180,61 @@ public class FuryMcLauncher extends JFrame {
      *  GridBagLayout row never reflows on hover; only the painted image grows. */
     private static class HoverLogo extends JComponent {
 
+        private static final float MAX_SCALE = 1.2F;
+        private static final float SCALE_STEP = 0.025F;
+        private static final int TICK_MS = 15;
+
         private final Image source;
         private final int baseWidth;
         private final int baseHeight;
-        private boolean hovered;
+        private float scale = 1F;
+        private float targetScale = 1F;
+        private Timer animTimer;
 
         HoverLogo(Image source, int baseWidth) {
             this.source = source;
             this.baseWidth = baseWidth;
             this.baseHeight = Math.round(baseWidth * (source.getHeight(null) / (float) source.getWidth(null)));
-            setPreferredSize(new Dimension(this.baseWidth, this.baseHeight));
+
+            // The component's own size reserves room for the FULL zoomed footprint (not just the resting
+            // size) - Swing clips each child's painting to its own bounds, so without this margin the
+            // zoomed-in image would get cropped right at the component's edge instead of growing freely
+            // (see player feedback). The resting-state image is simply centered within that padded box.
+            setPreferredSize(new Dimension(Math.round(this.baseWidth * MAX_SCALE), Math.round(this.baseHeight * MAX_SCALE)));
             setOpaque(false);
             setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
             addMouseListener(new MouseAdapter() {
 
                 @Override
                 public void mouseEntered(MouseEvent e) {
-                    hovered = true;
-                    repaint();
+                    animateTo(MAX_SCALE);
                 }
 
                 @Override
                 public void mouseExited(MouseEvent e) {
-                    hovered = false;
-                    repaint();
+                    animateTo(1F);
                 }
             });
+        }
+
+        /** Eases scale towards the target a little each tick instead of jumping straight there - a
+         *  smooth grow/shrink ("fondu") rather than an instant, clipped-looking snap. */
+        private void animateTo(float target) {
+            targetScale = target;
+            if (animTimer != null && animTimer.isRunning()) {
+                return;
+            }
+            animTimer = new Timer(TICK_MS, null);
+            animTimer.addActionListener(e -> {
+                if (Math.abs(scale - targetScale) <= SCALE_STEP) {
+                    scale = targetScale;
+                    ((Timer) e.getSource()).stop();
+                } else {
+                    scale += scale < targetScale ? SCALE_STEP : -SCALE_STEP;
+                }
+                repaint();
+            });
+            animTimer.start();
         }
 
         @Override
@@ -1211,13 +1242,15 @@ public class FuryMcLauncher extends JFrame {
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
 
-            if (hovered) {
-                int zoomW = Math.round(baseWidth * 1.08F);
-                int zoomH = Math.round(baseHeight * 1.08F);
-                g2.drawImage(source, (baseWidth - zoomW) / 2, (baseHeight - zoomH) / 2, zoomW, zoomH, null);
-            } else {
-                g2.drawImage(source, 0, 0, baseWidth, baseHeight, null);
-            }
+            // Drawn relative to the component's ACTUAL current bounds (not the base size) and always
+            // re-centered - GridBagLayout stretches this row horizontally like every other sidebar row
+            // (see buildSidebar), so assuming the component stayed at its base width previously left the
+            // logo drawn flush-left instead of centered (see player feedback screenshot).
+            int drawW = Math.round(baseWidth * scale);
+            int drawH = Math.round(baseHeight * scale);
+            int x = (getWidth() - drawW) / 2;
+            int y = (getHeight() - drawH) / 2;
+            g2.drawImage(source, x, y, drawW, drawH, null);
 
             g2.dispose();
         }
@@ -1358,6 +1391,11 @@ public class FuryMcLauncher extends JFrame {
         SidebarIconButton(Glyph glyph) {
             this.glyph = glyph;
             setPreferredSize(new Dimension(52, 52));
+            // JButton's default maximumSize is effectively unbounded, so without capping it explicitly
+            // BoxLayout.X_AXIS (in buildIconRow) was splitting the row's leftover width between this
+            // button AND the trailing glue instead of giving it all to the glue - stretching the button
+            // (and its drawn folder shape) noticeably wider than tall (see player feedback: "étiré").
+            setMaximumSize(getPreferredSize());
             setContentAreaFilled(false);
             setBorderPainted(false);
             setFocusPainted(false);
