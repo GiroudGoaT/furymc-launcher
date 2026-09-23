@@ -3,6 +3,7 @@ package com.mcfaction.launcher;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
@@ -39,6 +40,8 @@ import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.LineUnavailableException;
 import javax.sound.sampled.SourceDataLine;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JComponent;
@@ -88,16 +91,17 @@ public class FuryMcLauncher extends JFrame {
     // (1.4.4) - since SelfUpdater compares the two unconditionally on every startup, that mismatch made
     // it attempt the self-update jar-swap-and-relaunch dance on literally every single launch, not just
     // once after an actual update. Bump this alongside launcherVersion in version.json from now on.
-    private static final String LAUNCHER_VERSION = "1.4.6";
+    private static final String LAUNCHER_VERSION = "1.4.7";
 
     private static final Dimension LOADING_SIZE = new Dimension(420, 580);
     private static final Dimension MAIN_SIZE = new Dimension(1100, 620);
     private static final int CORNER_RADIUS = 22;
 
     // However fast the (now much lighter - just a manifest fetch, no game-file download) launcher
-    // self-update check finishes, the loading screen stays up at least this long - purely cosmetic, just
-    // enough to avoid an instant flash between window sizes (see Timer usage in startUpdateSequence).
-    private static final int MIN_LOADING_DISPLAY_MS = 600;
+    // self-update check finishes, the loading screen stays up at least this long - purely cosmetic (the
+    // player asked for a deliberate splash pause here instead of an instant flash between window sizes,
+    // see Timer usage in startUpdateSequence).
+    private static final int MIN_LOADING_DISPLAY_MS = 5_000;
 
     private static final String CARD_LOADING = "loading";
     private static final String CARD_MAIN = "main";
@@ -117,6 +121,7 @@ public class FuryMcLauncher extends JFrame {
 
     private JButton playButton;
     private JLabel mainStatusLabel;
+    private GameProgressBar progressBar;
     private JButton profileButton;
     private RootPanel content;
 
@@ -273,11 +278,24 @@ public class FuryMcLauncher extends JFrame {
         mainStatusLabel = new JLabel(" ");
         mainStatusLabel.setForeground(Color.WHITE);
         mainStatusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        mainStatusLabel.setAlignmentX(Component.RIGHT_ALIGNMENT);
+        progressBar = new GameProgressBar();
+        progressBar.setAlignmentX(Component.RIGHT_ALIGNMENT);
+
+        // Stacks the status text above its progress bar instead of side-by-side - bottomPanel's own
+        // FlowLayout only arranges left-to-right, so this pair needs its own mini vertical layout.
+        JPanel statusPanel = new JPanel();
+        statusPanel.setOpaque(false);
+        statusPanel.setLayout(new BoxLayout(statusPanel, BoxLayout.Y_AXIS));
+        statusPanel.add(mainStatusLabel);
+        statusPanel.add(Box.createVerticalStrut(4));
+        statusPanel.add(progressBar);
+
         playButton = new ImageButton(loadImage("/button_play.png"), 220, 66);
         playButton.addActionListener(e -> onPlay());
         JButton settingsButton = new ImageButton(loadImage("/button_settings.png"), 48, 48);
         settingsButton.addActionListener(e -> new SettingsDialog(this, config).setVisible(true));
-        bottomPanel.add(mainStatusLabel);
+        bottomPanel.add(statusPanel);
         bottomPanel.add(playButton);
         bottomPanel.add(settingsButton);
 
@@ -390,8 +408,11 @@ public class FuryMcLauncher extends JFrame {
 
     /** Checks for game-file updates (base install + mod), downloads whatever's missing/outdated, then
      *  launches - all triggered by the Jouer click itself rather than eagerly at startup (see class
-     *  javadoc). The status label next to the button doubles as the progress display for both the update
-     *  check and any download, then finally the actual game launch. */
+     *  javadoc). The status label + progress bar under the button double as the display for both the
+     *  update check and any download, then finally the actual game launch. When the install is already
+     *  current there's no real download to show progress for, so a brief simulated check runs instead
+     *  (see {@link #simulateUpToDateCheck}) - otherwise the button would jump straight to "Lancement du
+     *  jeu..." with no visible feedback at all, which reads as broken rather than fast. */
     private void onPlay() {
         String username = config.getUsername();
         if (username.isEmpty()) {
@@ -401,31 +422,39 @@ public class FuryMcLauncher extends JFrame {
         }
 
         playButton.setEnabled(false);
+        progressBar.setProgress(0);
+        progressBar.setVisible(true);
         mainStatusLabel.setText("Vérification des mises à jour...");
 
-        new SwingWorker<Void, String>() {
+        new SwingWorker<Void, ProgressUpdate>() {
 
             @Override
             protected Void doInBackground() throws Exception {
                 Path installDir = config.getInstallDir();
                 VersionManifest manifest = updateManager.fetchManifest(MANIFEST_URL);
+                boolean updated = false;
 
                 if (updateManager.needsBaseUpdate(installDir, manifest)) {
-                    publish("Téléchargement des fichiers du jeu (première installation)...");
+                    updated = true;
+                    publish(new ProgressUpdate(0, "Téléchargement des fichiers du jeu (première installation)..."));
                     updateManager.downloadAndInstallBase(
                         installDir,
                         manifest,
-                        (percent, status) -> publish(status));
+                        (percent, status) -> publish(new ProgressUpdate(percent, status)));
                 }
                 if (updateManager.needsModUpdate(installDir, manifest)) {
-                    publish("Téléchargement de la mise à jour...");
+                    updated = true;
+                    publish(new ProgressUpdate(0, "Téléchargement de la mise à jour..."));
                     updateManager.downloadAndInstallMod(
                         installDir,
                         manifest,
-                        (percent, status) -> publish(status));
+                        (percent, status) -> publish(new ProgressUpdate(percent, status)));
+                }
+                if (!updated) {
+                    simulateUpToDateCheck(this::publish);
                 }
 
-                publish("Lancement du jeu...");
+                publish(new ProgressUpdate(100, "Lancement du jeu..."));
                 // GameLauncher#launch calls cleanStaleLayout itself right before building the process -
                 // no need to also call it here.
                 gameLauncher.launch(installDir, username, config.getOrCreateUuid(), config.getRamMb());
@@ -433,8 +462,12 @@ public class FuryMcLauncher extends JFrame {
             }
 
             @Override
-            protected void process(List<String> chunks) {
-                mainStatusLabel.setText(chunks.get(chunks.size() - 1));
+            protected void process(List<ProgressUpdate> chunks) {
+                ProgressUpdate last = chunks.get(chunks.size() - 1);
+                mainStatusLabel.setText(last.status);
+                if (last.percent >= 0) {
+                    progressBar.setProgress(last.percent);
+                }
             }
 
             @Override
@@ -447,10 +480,39 @@ public class FuryMcLauncher extends JFrame {
                 } catch (Exception e) {
                     Throwable cause = e.getCause() != null ? e.getCause() : e;
                     mainStatusLabel.setText("Erreur : " + cause.getMessage());
+                    progressBar.setVisible(false);
                     playButton.setEnabled(true);
                 }
             }
         }.execute();
+    }
+
+    /** Nothing to actually download when the install is already current - this fakes a short, visibly
+     *  staged check (rather than jumping straight from "Vérification..." to "Lancement...") so Jouer
+     *  never looks like it did nothing. Runs on the SwingWorker's background thread (see its only caller),
+     *  so the Thread.sleep here doesn't block the EDT. */
+    private static void simulateUpToDateCheck(java.util.function.Consumer<ProgressUpdate> publish)
+        throws InterruptedException {
+        String[] steps = {"Vérification des fichiers du jeu...", "Contrôle de l'intégrité...", "Jeu à jour !"};
+        int[] percents = {35, 75, 100};
+        for (int i = 0; i < steps.length; i++) {
+            publish.accept(new ProgressUpdate(percents[i], steps[i]));
+            Thread.sleep(600);
+        }
+    }
+
+    /** One (percent, status) tick published from onPlay's SwingWorker - percent is -1 for steps whose
+     *  size isn't known ahead of time (see {@link ProgressListener}), in which case the bar just holds
+     *  its last value while the status text still updates. */
+    private static final class ProgressUpdate {
+
+        final int percent;
+        final String status;
+
+        ProgressUpdate(int percent, String status) {
+            this.percent = percent;
+            this.status = status;
+        }
     }
 
     /** Runs once at startup: only checks whether the launcher app itself is outdated and, if so,
@@ -781,6 +843,40 @@ public class FuryMcLauncher extends JFrame {
             int handleX = Math.max(0, Math.min(width - handleD, filledWidth - handleD / 2));
             g2.setColor(GOLD);
             g2.fillOval(handleX, getHeight() / 2 - handleD / 2, handleD, handleD);
+
+            g2.dispose();
+        }
+    }
+
+    /** Thin gold-on-dark progress bar shown under the status label during onPlay's update check/download -
+     *  hidden until then (see buildMainCard), so it doesn't clutter the main card the rest of the time. */
+    private static class GameProgressBar extends JComponent {
+
+        private int percent;
+
+        GameProgressBar() {
+            setPreferredSize(new Dimension(200, 6));
+            setOpaque(false);
+            setVisible(false);
+        }
+
+        void setProgress(int percent) {
+            this.percent = Math.max(0, Math.min(100, percent));
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int h = getHeight();
+            g2.setColor(new Color(255, 255, 255, 40));
+            g2.fillRoundRect(0, 0, getWidth(), h, h, h);
+
+            int filledWidth = Math.max(h, Math.round(getWidth() * (percent / 100F)));
+            g2.setColor(GOLD);
+            g2.fillRoundRect(0, 0, filledWidth, h, h, h);
 
             g2.dispose();
         }
