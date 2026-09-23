@@ -47,7 +47,6 @@ import javax.sound.sampled.SourceDataLine;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
-import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
@@ -96,7 +95,7 @@ public class FuryMcLauncher extends JFrame {
     // (1.4.4) - since SelfUpdater compares the two unconditionally on every startup, that mismatch made
     // it attempt the self-update jar-swap-and-relaunch dance on literally every single launch, not just
     // once after an actual update. Bump this alongside launcherVersion in version.json from now on.
-    private static final String LAUNCHER_VERSION = "1.4.13";
+    private static final String LAUNCHER_VERSION = "1.4.14";
 
     private static final Dimension LOADING_SIZE = new Dimension(420, 580);
     private static final Dimension MAIN_SIZE = new Dimension(1100, 620);
@@ -174,6 +173,14 @@ public class FuryMcLauncher extends JFrame {
         cardHost.add(buildMainCard(), CARD_MAIN);
         content.add(cardHost, BorderLayout.CENTER);
         cardLayout.show(cardHost, CARD_LOADING);
+
+        // Painted on the glass pane (renders above every other component, including the sidebar's own
+        // opaque background) rather than as part of RootPanel's paintComponent - the border used to be
+        // drawn there, UNDER the sidebar, which is itself opaque and fully covers that edge of the
+        // window, hiding the border along the whole left side (see player feedback screenshot).
+        BorderOverlay borderOverlay = new BorderOverlay();
+        setGlassPane(borderOverlay);
+        borderOverlay.setVisible(true);
 
         setSize(LOADING_SIZE);
         setLocationRelativeTo(null);
@@ -293,8 +300,7 @@ public class FuryMcLauncher extends JFrame {
         gbc.insets = new Insets(0, 0, 28, 0);
         sidebar.add(buildTag, gbc);
 
-        JLabel logoLabel = new JLabel(scaledIcon(loadImage("/logo.png"), (int) (SIDEBAR_CONTENT_WIDTH * 0.8)), SwingConstants.CENTER);
-        logoLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        HoverLogo logoLabel = new HoverLogo(loadImage("/logo.png"), (int) (SIDEBAR_CONTENT_WIDTH * 0.8));
         gbc.gridy = row++;
         gbc.insets = new Insets(0, 0, 2, 0);
         sidebar.add(logoLabel, gbc);
@@ -393,7 +399,7 @@ public class FuryMcLauncher extends JFrame {
         JPanel row = new JPanel();
         row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
         row.setOpaque(false);
-        row.setPreferredSize(new Dimension(SIDEBAR_CONTENT_WIDTH, 44));
+        row.setPreferredSize(new Dimension(SIDEBAR_CONTENT_WIDTH, 52));
         row.setMaximumSize(row.getPreferredSize());
 
         SidebarIconButton folderButton = new SidebarIconButton(SidebarIconButton.Glyph.FOLDER);
@@ -848,12 +854,6 @@ public class FuryMcLauncher extends JFrame {
         }
     }
 
-    /** Scales an image down to the given display width, preserving aspect ratio, for use as a JLabel icon. */
-    private static ImageIcon scaledIcon(Image source, int displayWidth) {
-        int displayHeight = Math.round(displayWidth * (source.getHeight(null) / (float) source.getWidth(null)));
-        return new ImageIcon(source.getScaledInstance(displayWidth, displayHeight, Image.SCALE_SMOOTH));
-    }
-
     /** Paints the FuryMc background image scaled to fill the window, plus a gradient border tracing the
      *  rounded window shape (undecorated windows lose the OS drop shadow, this stands in for it). */
     private static class RootPanel extends JPanel {
@@ -880,10 +880,33 @@ public class FuryMcLauncher extends JFrame {
             g2.setClip(clip);
             g2.drawImage(background, 0, 0, getWidth(), getHeight(), null);
             g2.setClip(null);
+            g2.dispose();
+        }
+    }
 
-            g2.setStroke(new java.awt.BasicStroke(3F));
+    /** Draws the same gradient window-edge stroke RootPanel used to draw itself - moved onto the glass
+     *  pane (see constructor) so it paints last, above every other component including opaque ones like
+     *  the sidebar, instead of being drawn first and then covered up. contains() always returns false so
+     *  this never intercepts a mouse event meant for whatever's underneath - it's paint-only. */
+    private static class BorderOverlay extends JComponent {
+
+        BorderOverlay() {
+            setOpaque(false);
+        }
+
+        @Override
+        public boolean contains(int x, int y) {
+            return false;
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            g2.setStroke(new BasicStroke(3F));
             g2.setPaint(
-                new java.awt.GradientPaint(0, 0, GOLD, getWidth(), getHeight(), new Color(0x5E, 0x32, 0x86)));
+                new java.awt.GradientPaint(0, 0, GOLD, getWidth(), getHeight(), PURPLE_DEEP));
             g2.draw(
                 new RoundRectangle2D.Double(1.5, 1.5, getWidth() - 3, getHeight() - 3, CORNER_RADIUS, CORNER_RADIUS));
             g2.dispose();
@@ -1149,6 +1172,57 @@ public class FuryMcLauncher extends JFrame {
         }
     }
 
+    /** The sidebar logo - zooms in slightly while the mouse is over it, same "draw the image slightly
+     *  larger than the component's own bounds on hover" technique used elsewhere in this file (see
+     *  ImageButton's hover zoom in an earlier revision). Drawn at a fixed base size so the surrounding
+     *  GridBagLayout row never reflows on hover; only the painted image grows. */
+    private static class HoverLogo extends JComponent {
+
+        private final Image source;
+        private final int baseWidth;
+        private final int baseHeight;
+        private boolean hovered;
+
+        HoverLogo(Image source, int baseWidth) {
+            this.source = source;
+            this.baseWidth = baseWidth;
+            this.baseHeight = Math.round(baseWidth * (source.getHeight(null) / (float) source.getWidth(null)));
+            setPreferredSize(new Dimension(this.baseWidth, this.baseHeight));
+            setOpaque(false);
+            setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+            addMouseListener(new MouseAdapter() {
+
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    hovered = true;
+                    repaint();
+                }
+
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    hovered = false;
+                    repaint();
+                }
+            });
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+
+            if (hovered) {
+                int zoomW = Math.round(baseWidth * 1.08F);
+                int zoomH = Math.round(baseHeight * 1.08F);
+                g2.drawImage(source, (baseWidth - zoomW) / 2, (baseHeight - zoomH) / 2, zoomW, zoomH, null);
+            } else {
+                g2.drawImage(source, 0, 0, baseWidth, baseHeight, null);
+            }
+
+            g2.dispose();
+        }
+    }
+
     /** Rounded translucent box behind the avatar icon + pseudo text field. */
     private static class PseudoFieldPanel extends JPanel {
 
@@ -1283,7 +1357,7 @@ public class FuryMcLauncher extends JFrame {
 
         SidebarIconButton(Glyph glyph) {
             this.glyph = glyph;
-            setPreferredSize(new Dimension(44, 44));
+            setPreferredSize(new Dimension(52, 52));
             setContentAreaFilled(false);
             setBorderPainted(false);
             setFocusPainted(false);
@@ -1320,11 +1394,11 @@ public class FuryMcLauncher extends JFrame {
                 // Same visual language as PlayButton - a solid violet/gold shape rather than a thin
                 // outline glyph, so this reads as belonging to the same DA (see player feedback asking
                 // for "a real folder icon, same colours as the Jouer button").
-                float left = w * 0.12F;
-                float right = w * 0.88F;
-                float bodyTop = h * 0.34F;
-                float bottom = h * 0.8F;
-                float tabTop = h * 0.22F;
+                float left = w * 0.08F;
+                float right = w * 0.92F;
+                float bodyTop = h * 0.3F;
+                float bottom = h * 0.84F;
+                float tabTop = h * 0.16F;
 
                 java.awt.geom.Path2D.Float folder = new java.awt.geom.Path2D.Float();
                 folder.moveTo(left, tabTop);
