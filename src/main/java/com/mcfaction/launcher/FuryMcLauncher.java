@@ -91,7 +91,7 @@ public class FuryMcLauncher extends JFrame {
     // (1.4.4) - since SelfUpdater compares the two unconditionally on every startup, that mismatch made
     // it attempt the self-update jar-swap-and-relaunch dance on literally every single launch, not just
     // once after an actual update. Bump this alongside launcherVersion in version.json from now on.
-    private static final String LAUNCHER_VERSION = "1.4.7";
+    private static final String LAUNCHER_VERSION = "1.4.8";
 
     private static final Dimension LOADING_SIZE = new Dimension(420, 580);
     private static final Dimension MAIN_SIZE = new Dimension(1100, 620);
@@ -545,7 +545,7 @@ public class FuryMcLauncher extends JFrame {
                         return;
                     }
                     long remaining = MIN_LOADING_DISPLAY_MS - (System.currentTimeMillis() - startedAt);
-                    Timer timer = new Timer((int) Math.max(0, remaining), e -> transitionToMain());
+                    Timer timer = new Timer((int) Math.max(0, remaining), e -> beginTransitionToMain());
                     timer.setRepeats(false);
                     timer.start();
                 } catch (Exception e) {
@@ -564,6 +564,63 @@ public class FuryMcLauncher extends JFrame {
         setLocationRelativeTo(null);
         applyRoundedShape();
         startBackgroundMusic();
+    }
+
+    // How much getOpacity() moves per fade tick - 10 ticks at FADE_TICK_MS each to cross the full
+    // 0..1 range, in either direction.
+    private static final float FADE_STEP = 0.1F;
+    private static final int FADE_TICK_MS = 15;
+
+    /** Softens the loading→main card switch instead of an instant resize+content swap, which reads as an
+     *  abrupt flash: shows one last status line, holds it just long enough to read, then fades the whole
+     *  window out, swaps to the main card while invisible, and fades back in. */
+    private void beginTransitionToMain() {
+        loadingStatusLabel.setText("Lancement du launcher...");
+        Timer holdTimer = new Timer(500, e -> fadeOutThenSwitch());
+        holdTimer.setRepeats(false);
+        holdTimer.start();
+    }
+
+    private void fadeOutThenSwitch() {
+        if (!isWindowTranslucencySupported()) {
+            // Some platform/driver combos don't support window translucency at all - fall back to the
+            // old instant switch rather than risk an UnsupportedOperationException from setOpacity.
+            transitionToMain();
+            return;
+        }
+        Timer fadeOutTimer = new Timer(FADE_TICK_MS, null);
+        fadeOutTimer.addActionListener(e -> {
+            float opacity = getOpacity() - FADE_STEP;
+            if (opacity <= 0F) {
+                ((Timer) e.getSource()).stop();
+                setOpacity(0F);
+                transitionToMain();
+                fadeIn();
+            } else {
+                setOpacity(opacity);
+            }
+        });
+        fadeOutTimer.start();
+    }
+
+    private void fadeIn() {
+        Timer fadeInTimer = new Timer(FADE_TICK_MS, null);
+        fadeInTimer.addActionListener(e -> {
+            float opacity = getOpacity() + FADE_STEP;
+            if (opacity >= 1F) {
+                ((Timer) e.getSource()).stop();
+                setOpacity(1F);
+            } else {
+                setOpacity(opacity);
+            }
+        });
+        fadeInTimer.start();
+    }
+
+    private boolean isWindowTranslucencySupported() {
+        java.awt.GraphicsConfiguration gc = getGraphicsConfiguration();
+        return gc != null && gc.getDevice()
+            .isWindowTranslucencySupported(java.awt.GraphicsDevice.WindowTranslucency.TRANSLUCENT);
     }
 
     /** Loads the whole track into memory once and streams it in small chunks for the lifetime of the
