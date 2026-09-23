@@ -4,6 +4,7 @@ import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
@@ -13,17 +14,20 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Image;
 import java.awt.Insets;
+import java.awt.LinearGradientPaint;
 import java.awt.Point;
+import java.awt.RadialGradientPaint;
 import java.awt.RenderingHints;
 import java.awt.Shape;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.BasicStroke;
+import java.awt.geom.Ellipse2D;
 import java.awt.geom.RoundRectangle2D;
-import java.awt.image.BufferedImage;
-import java.awt.image.RescaleOp;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
@@ -40,6 +44,7 @@ import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.LineUnavailableException;
 import javax.sound.sampled.SourceDataLine;
+import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.ImageIcon;
@@ -50,7 +55,6 @@ import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
-import javax.swing.JPopupMenu;
 import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
@@ -91,7 +95,7 @@ public class FuryMcLauncher extends JFrame {
     // (1.4.4) - since SelfUpdater compares the two unconditionally on every startup, that mismatch made
     // it attempt the self-update jar-swap-and-relaunch dance on literally every single launch, not just
     // once after an actual update. Bump this alongside launcherVersion in version.json from now on.
-    private static final String LAUNCHER_VERSION = "1.4.8";
+    private static final String LAUNCHER_VERSION = "1.4.9";
 
     private static final Dimension LOADING_SIZE = new Dimension(420, 580);
     private static final Dimension MAIN_SIZE = new Dimension(1100, 620);
@@ -107,7 +111,19 @@ public class FuryMcLauncher extends JFrame {
     private static final String CARD_MAIN = "main";
 
     private static final Color GOLD = new Color(0xF0, 0xC8, 0x78);
+    private static final Color GOLD_DIM = new Color(0xC9, 0xA1, 0x5F);
+    private static final Color PURPLE_DEEP = new Color(0x5E, 0x32, 0x86);
+    private static final Color PURPLE_DARK = new Color(0x3B, 0x1A, 0x5C);
     private static final Color PANEL_DARK = new Color(0x28, 0x27, 0x2B, 245);
+    private static final Color SIDEBAR_TOP = new Color(0x1C, 0x1B, 0x21);
+    private static final Color SIDEBAR_BOTTOM = new Color(0x16, 0x15, 0x1A);
+    private static final Color INK_DIM = new Color(0xA9, 0xA3, 0xB8);
+
+    // Sidebar column of the main card - fixed pixel widths since the window itself is non-resizable
+    // (see MAIN_SIZE), so there's no need for percentage-based/stretchy sizing here.
+    private static final int SIDEBAR_WIDTH = 400;
+    private static final int SIDEBAR_PAD_H = 28;
+    private static final int SIDEBAR_CONTENT_WIDTH = SIDEBAR_WIDTH - 2 * SIDEBAR_PAD_H;
 
     private final LauncherConfig config = new LauncherConfig();
     private final UpdateManager updateManager = new UpdateManager();
@@ -120,9 +136,10 @@ public class FuryMcLauncher extends JFrame {
     private JButton retryButton;
 
     private JButton playButton;
+    private JTextField pseudoField;
+    private JLabel ramValueLabel;
     private JLabel mainStatusLabel;
     private GameProgressBar progressBar;
-    private JButton profileButton;
     private RootPanel content;
 
     private MusicPlayer musicPlayer;
@@ -229,80 +246,153 @@ public class FuryMcLauncher extends JFrame {
         return panel;
     }
 
+    /** Two-panel layout (compact sidebar / editorial art panel) matching the reference DA approved by
+     *  the player - see the mockup artifact this was built from. Replaces the previous single centered
+     *  panel with logo+slogan overlaying the whole background and controls floating over it. */
     private JPanel buildMainCard() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setOpaque(false);
+        panel.add(buildSidebar(), BorderLayout.WEST);
+        panel.add(buildArtPanel(), BorderLayout.CENTER);
+        return panel;
+    }
 
-        JPanel topPanel = buildWindowControls();
-        profileButton = new ImageButton(loadImage("/button_profile.png"), 44, 44);
-        profileButton.addActionListener(e -> showProfilePopup());
+    private JPanel buildSidebar() {
+        SidebarPanel sidebar = new SidebarPanel();
+        sidebar.setPreferredSize(new Dimension(SIDEBAR_WIDTH, 10));
+        sidebar.setLayout(new BoxLayout(sidebar, BoxLayout.Y_AXIS));
+        sidebar.setBorder(BorderFactory.createEmptyBorder(26, SIDEBAR_PAD_H, 22, SIDEBAR_PAD_H));
 
-        // The logo sits almost flush with the top of the window - closer than the window-controls row
-        // would otherwise allow - by using absolute positioning (null layout) instead of stacking it
-        // below that row: the controls float on top of the logo's (transparent-cropped) artwork instead
-        // of pushing it down.
-        JLabel logoLabel = new JLabel(scaledIcon(loadImage("/logo.png"), 520));
+        JLabel buildTag = new JLabel("FuryMc · 1.7.10");
+        buildTag.setFont(new Font("Segoe UI", Font.BOLD, 10));
+        buildTag.setForeground(INK_DIM);
+        buildTag.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sidebar.add(buildTag);
+
+        sidebar.add(Box.createVerticalStrut(28));
+
+        JLabel logoLabel = new JLabel(scaledIcon(loadImage("/logo.png"), (int) (SIDEBAR_CONTENT_WIDTH * 0.8)));
+        logoLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        sidebar.add(logoLabel);
+
+        sidebar.add(Box.createVerticalStrut(2));
+
         JLabel sloganLabel = new JLabel("Si tu veux la paix, prépare la guerre");
-        sloganLabel.setFont(new Font("Segoe UI", Font.ITALIC, 14));
-        sloganLabel.setForeground(Color.WHITE);
+        sloganLabel.setFont(new Font("Segoe UI", Font.ITALIC, 12));
+        sloganLabel.setForeground(INK_DIM);
+        sloganLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        sidebar.add(sloganLabel);
 
-        JPanel stage = new JPanel(null) {
-            @Override
-            public void doLayout() {
-                int width = getWidth();
+        sidebar.add(Box.createVerticalStrut(30));
 
-                Dimension logoSize = logoLabel.getPreferredSize();
-                logoLabel.setBounds((width - logoSize.width) / 2, 2, logoSize.width, logoSize.height);
+        JLabel fieldLabel = new JLabel("PSEUDONYME");
+        fieldLabel.setFont(new Font("Segoe UI", Font.BOLD, 10));
+        fieldLabel.setForeground(GOLD_DIM);
+        fieldLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sidebar.add(fieldLabel);
 
-                Dimension sloganSize = sloganLabel.getPreferredSize();
-                int sloganY = logoLabel.getY() + logoSize.height + 8;
-                sloganLabel.setBounds((width - sloganSize.width) / 2, sloganY, sloganSize.width, sloganSize.height);
+        sidebar.add(Box.createVerticalStrut(8));
 
-                Dimension controlsSize = topPanel.getPreferredSize();
-                topPanel.setBounds(width - controlsSize.width, 0, controlsSize.width, controlsSize.height);
+        JPanel pseudoBox = buildPseudoField();
+        pseudoBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sidebar.add(pseudoBox);
 
-                Dimension profileSize = profileButton.getPreferredSize();
-                profileButton.setBounds(4, 4, profileSize.width, profileSize.height);
-            }
-        };
-        stage.setOpaque(false);
-        stage.add(logoLabel);
-        stage.add(sloganLabel);
-        stage.add(topPanel);
-        stage.add(profileButton);
+        sidebar.add(Box.createVerticalStrut(16));
 
-        panel.add(stage, BorderLayout.CENTER);
-
-        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 20));
-        bottomPanel.setOpaque(false);
-        mainStatusLabel = new JLabel(" ");
-        mainStatusLabel.setForeground(Color.WHITE);
-        mainStatusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        mainStatusLabel.setAlignmentX(Component.RIGHT_ALIGNMENT);
-        progressBar = new GameProgressBar();
-        progressBar.setAlignmentX(Component.RIGHT_ALIGNMENT);
-
-        // Stacks the status text above its progress bar instead of side-by-side - bottomPanel's own
-        // FlowLayout only arranges left-to-right, so this pair needs its own mini vertical layout.
-        JPanel statusPanel = new JPanel();
-        statusPanel.setOpaque(false);
-        statusPanel.setLayout(new BoxLayout(statusPanel, BoxLayout.Y_AXIS));
-        statusPanel.add(mainStatusLabel);
-        statusPanel.add(Box.createVerticalStrut(4));
-        statusPanel.add(progressBar);
-
-        playButton = new ImageButton(loadImage("/button_play.png"), 220, 66);
+        playButton = new PlayButton("JOUER");
+        playButton.setAlignmentX(Component.LEFT_ALIGNMENT);
         playButton.addActionListener(e -> onPlay());
-        JButton settingsButton = new ImageButton(loadImage("/button_settings.png"), 48, 48);
-        settingsButton.addActionListener(e -> new SettingsDialog(this, config).setVisible(true));
-        bottomPanel.add(statusPanel);
-        bottomPanel.add(playButton);
-        bottomPanel.add(settingsButton);
+        sidebar.add(playButton);
 
-        JPanel bottomBar = new JPanel(new BorderLayout());
-        bottomBar.setOpaque(false);
-        JPanel soundHolder = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 20));
-        soundHolder.setOpaque(false);
+        sidebar.add(Box.createVerticalStrut(14));
+
+        JPanel iconRow = buildIconRow();
+        iconRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sidebar.add(iconRow);
+
+        sidebar.add(Box.createVerticalGlue());
+
+        JPanel statusBlock = buildStatusBlock();
+        statusBlock.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sidebar.add(statusBlock);
+
+        return sidebar;
+    }
+
+    private JPanel buildPseudoField() {
+        PseudoFieldPanel field = new PseudoFieldPanel();
+        field.setLayout(new BoxLayout(field, BoxLayout.X_AXIS));
+        field.setPreferredSize(new Dimension(SIDEBAR_CONTENT_WIDTH, 44));
+        field.setMaximumSize(field.getPreferredSize());
+        field.setBorder(BorderFactory.createEmptyBorder(0, 14, 0, 14));
+
+        AvatarIcon avatar = new AvatarIcon();
+        field.add(avatar);
+        field.add(Box.createHorizontalStrut(10));
+
+        pseudoField = new JTextField(config.getUsername());
+        pseudoField.setOpaque(false);
+        pseudoField.setBorder(null);
+        pseudoField.setForeground(Color.WHITE);
+        pseudoField.setCaretColor(GOLD);
+        pseudoField.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        pseudoField.addFocusListener(new FocusAdapter() {
+            @Override
+            public void focusLost(FocusEvent e) {
+                savePseudoField();
+            }
+        });
+        pseudoField.addActionListener(e -> {
+            savePseudoField();
+            playButton.requestFocusInWindow();
+        });
+        field.add(pseudoField);
+
+        return field;
+    }
+
+    /** Validates and persists whatever's currently typed in the pseudo field - called both when focus
+     *  leaves the field and when Entrée is pressed. Silently ignores an invalid value rather than
+     *  reverting it, since the player is very likely mid-edit (e.g. just cleared the field to retype) -
+     *  onPlay() is the real gatekeeper that refuses to launch with an invalid name. */
+    private void savePseudoField() {
+        String value = pseudoField.getText()
+            .trim();
+        if (value.isEmpty() || value.length() > 16) {
+            return;
+        }
+        config.setUsername(value);
+        config.save();
+    }
+
+    private JPanel buildIconRow() {
+        JPanel row = new JPanel();
+        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
+        row.setOpaque(false);
+        row.setPreferredSize(new Dimension(SIDEBAR_CONTENT_WIDTH, 38));
+        row.setMaximumSize(row.getPreferredSize());
+
+        SidebarIconButton folderButton = new SidebarIconButton(SidebarIconButton.Glyph.FOLDER);
+        folderButton.setToolTipText("Ouvrir le dossier d'installation");
+        folderButton.addActionListener(e -> openInstallFolder());
+        row.add(folderButton);
+
+        row.add(Box.createHorizontalStrut(8));
+        row.add(buildSoundControls());
+
+        row.add(Box.createHorizontalGlue());
+        row.add(buildRamReadout());
+
+        return row;
+    }
+
+    /** Mute toggle + volume slider - previously lived in their own bottom-left strip under the old
+     *  single-panel layout; folded into the icon row here since the new sidebar has no separate bottom
+     *  bar of its own. */
+    private JPanel buildSoundControls() {
+        JPanel holder = new JPanel();
+        holder.setLayout(new BoxLayout(holder, BoxLayout.X_AXIS));
+        holder.setOpaque(false);
 
         float initialVolume = config.getMusicVolume();
         if (initialVolume > 0F) {
@@ -317,93 +407,142 @@ public class FuryMcLauncher extends JFrame {
         volumeBar.onDrag = v -> applyMusicVolume(v, false);
         volumeBar.onCommit = v -> applyMusicVolume(v, true);
 
-        soundHolder.add(soundButton);
-        soundHolder.add(volumeBar);
-        bottomBar.add(soundHolder, BorderLayout.WEST);
-        bottomBar.add(bottomPanel, BorderLayout.CENTER);
-        panel.add(bottomBar, BorderLayout.SOUTH);
-
-        return panel;
+        holder.add(soundButton);
+        holder.add(volumeBar);
+        return holder;
     }
 
-    /** Anchored under the profile button - shows the saved pseudo + Se déconnecter if one is set,
-     *  otherwise a field to pick one (first run, or right after déconnexion). */
-    private void showProfilePopup() {
-        JPopupMenu popup = new JPopupMenu();
-        popup.setBorder(javax.swing.BorderFactory.createEmptyBorder());
-        popup.setOpaque(false);
+    private JPanel buildRamReadout() {
+        JPanel readout = new JPanel();
+        readout.setLayout(new BoxLayout(readout, BoxLayout.Y_AXIS));
+        readout.setOpaque(false);
+        readout.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
 
-        RoundedPanel popupContent = new RoundedPanel();
-        popupContent.setLayout(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.gridx = 0;
-        gbc.insets = new Insets(10, 18, 10, 18);
+        JLabel caption = new JLabel("RAM");
+        caption.setFont(new Font("Segoe UI", Font.BOLD, 9));
+        caption.setForeground(INK_DIM);
+        caption.setAlignmentX(Component.RIGHT_ALIGNMENT);
 
-        String username = config.getUsername();
-        if (username.isEmpty()) {
-            JLabel prompt = new JLabel("Choisis ton pseudo");
-            prompt.setForeground(Color.WHITE);
-            prompt.setFont(new Font("Segoe UI", Font.BOLD, 13));
-            gbc.gridy = 0;
-            gbc.insets = new Insets(14, 18, 8, 18);
-            popupContent.add(prompt, gbc);
+        ramValueLabel = new JLabel();
+        ramValueLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        ramValueLabel.setForeground(GOLD);
+        ramValueLabel.setAlignmentX(Component.RIGHT_ALIGNMENT);
+        refreshRamReadout();
 
-            JTextField field = new JTextField(14);
-            field.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-            gbc.gridy = 1;
-            gbc.insets = new Insets(0, 18, 10, 18);
-            popupContent.add(field, gbc);
+        readout.add(caption);
+        readout.add(ramValueLabel);
 
-            JButton confirm = new SolidButton("Valider", new Color(0x2F, 0x6F, 0xE0));
-            confirm.addActionListener(e -> {
-                String value = field.getText()
-                    .trim();
-                if (value.isEmpty() || value.length() > 16) {
-                    mainStatusLabel.setText("Pseudo invalide (1-16 caractères)");
-                    return;
-                }
-                config.setUsername(value);
-                config.save();
-                profileButton.repaint();
-                popup.setVisible(false);
-            });
-            gbc.gridy = 2;
-            gbc.insets = new Insets(0, 18, 14, 18);
-            popupContent.add(confirm, gbc);
-        } else {
-            JLabel avatar = new AvatarLabel();
-            gbc.gridy = 0;
-            gbc.insets = new Insets(16, 18, 8, 18);
-            popupContent.add(avatar, gbc);
+        readout.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                new SettingsDialog(FuryMcLauncher.this, config).setVisible(true);
+                refreshRamReadout();
+            }
+        });
 
-            JLabel nameLabel = new JLabel(username);
-            nameLabel.setForeground(Color.WHITE);
-            nameLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
-            gbc.gridy = 1;
-            gbc.insets = new Insets(0, 18, 10, 18);
-            popupContent.add(nameLabel, gbc);
+        return readout;
+    }
 
-            JButton logout = new JButton("Se déconnecter");
-            logout.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-            logout.setForeground(new Color(0xE0, 0x5A, 0x5A));
-            logout.setContentAreaFilled(false);
-            logout.setBorderPainted(false);
-            logout.setFocusPainted(false);
-            logout.addActionListener(e -> {
-                config.setUsername("");
-                config.save();
-                profileButton.repaint();
-                popup.setVisible(false);
-                showProfilePopup();
-            });
-            gbc.gridy = 2;
-            gbc.insets = new Insets(0, 18, 16, 18);
-            popupContent.add(logout, gbc);
+    private void refreshRamReadout() {
+        ramValueLabel.setText(String.format("%.1f GB", config.getRamMb() / 1024.0));
+    }
+
+    /** Opens the install directory in the OS file browser - creates it first if this is a brand new
+     *  install that hasn't downloaded anything yet, so the folder actually exists to open. */
+    private void openInstallFolder() {
+        try {
+            Path installDir = config.getInstallDir();
+            Files.createDirectories(installDir);
+            Desktop.getDesktop()
+                .open(installDir.toFile());
+        } catch (Exception e) {
+            mainStatusLabel.setText("Impossible d'ouvrir le dossier : " + e.getMessage());
         }
+    }
 
-        popup.add(popupContent);
-        popup.pack();
-        popup.show(profileButton, 16, profileButton.getHeight() + 6);
+    private JPanel buildStatusBlock() {
+        JPanel block = new JPanel();
+        block.setLayout(new BoxLayout(block, BoxLayout.Y_AXIS));
+        block.setOpaque(false);
+        block.setPreferredSize(new Dimension(SIDEBAR_CONTENT_WIDTH, 30));
+        block.setMaximumSize(new Dimension(SIDEBAR_CONTENT_WIDTH, 30));
+
+        mainStatusLabel = new JLabel("Prêt à jouer");
+        mainStatusLabel.setForeground(INK_DIM);
+        mainStatusLabel.setFont(new Font("Segoe UI", Font.BOLD, 10));
+        mainStatusLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        block.add(mainStatusLabel);
+
+        block.add(Box.createVerticalStrut(8));
+
+        progressBar = new GameProgressBar();
+        progressBar.setPreferredSize(new Dimension(SIDEBAR_CONTENT_WIDTH, 5));
+        progressBar.setMaximumSize(progressBar.getPreferredSize());
+        progressBar.setAlignmentX(Component.LEFT_ALIGNMENT);
+        block.add(progressBar);
+
+        return block;
+    }
+
+    private JPanel buildArtPanel() {
+        ArtPanel art = new ArtPanel();
+        art.setLayout(new BorderLayout());
+        art.setBorder(BorderFactory.createEmptyBorder(22, 30, 26, 30));
+
+        art.add(buildArtTopBar(), BorderLayout.NORTH);
+        art.add(buildTipsSection(), BorderLayout.CENTER);
+        return art;
+    }
+
+    private JPanel buildArtTopBar() {
+        JPanel bar = new JPanel(new BorderLayout());
+        bar.setOpaque(false);
+        bar.add(new ServerPill("FURYMC"), BorderLayout.WEST);
+        bar.add(buildWindowControls(), BorderLayout.EAST);
+        return bar;
+    }
+
+    private JPanel buildTipsSection() {
+        JPanel section = new JPanel();
+        section.setLayout(new BoxLayout(section, BoxLayout.Y_AXIS));
+        section.setOpaque(false);
+        section.setBorder(BorderFactory.createEmptyBorder(30, 0, 0, 0));
+
+        JPanel header = new JPanel(new BorderLayout());
+        header.setOpaque(false);
+        header.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+
+        JLabel title = new JLabel("ASTUCES");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        title.setForeground(INK_DIM);
+        header.add(title, BorderLayout.WEST);
+
+        // TODO: wire this to the real Discord invite once we have one - deliberately left without an
+        // action listener rather than guessing/hardcoding a placeholder URL that could be wrong.
+        header.add(new DiscordPill(), BorderLayout.EAST);
+
+        section.add(header);
+        section.add(Box.createVerticalStrut(16));
+
+        section.add(new TipCard(
+            TipCard.Glyph.BOX,
+            "Les caisses infernales",
+            "Récupère des clés sur les mobs et ouvre les caisses réparties sur la carte "
+                + "- chaque variante a ses propres récompenses, des plus communes aux plus rares."));
+        section.add(Box.createVerticalStrut(14));
+        section.add(new TipCard(
+            TipCard.Glyph.STAR,
+            "Gestion de faction",
+            "/f perms te permet de définir précisément qui peut construire, casser ou "
+                + "interagir dans le territoire de ta faction, rang par rang."));
+        section.add(Box.createVerticalStrut(14));
+        section.add(new TipCard(
+            TipCard.Glyph.CLOCK,
+            "Spawners améliorables",
+            "Chaque spawner peut être amélioré en jeu pour augmenter sa vitesse et la "
+                + "qualité de ses drops - ouvre /spawners pour voir la progression."));
+
+        return section;
     }
 
     /** Checks for game-file updates (base install + mod), downloads whatever's missing/outdated, then
@@ -414,12 +553,15 @@ public class FuryMcLauncher extends JFrame {
      *  (see {@link #simulateUpToDateCheck}) - otherwise the button would jump straight to "Lancement du
      *  jeu..." with no visible feedback at all, which reads as broken rather than fast. */
     private void onPlay() {
-        String username = config.getUsername();
-        if (username.isEmpty()) {
-            mainStatusLabel.setText("Définis ton pseudo en haut à gauche");
-            showProfilePopup();
+        String username = pseudoField.getText()
+            .trim();
+        if (username.isEmpty() || username.length() > 16) {
+            mainStatusLabel.setText("Pseudo invalide (1-16 caractères)");
+            pseudoField.requestFocusInWindow();
             return;
         }
+        config.setUsername(username);
+        config.save();
 
         playButton.setEnabled(false);
         progressBar.setProgress(0);
@@ -939,6 +1081,469 @@ public class FuryMcLauncher extends JFrame {
         }
     }
 
+    /** Dark panel behind the whole sidebar column - a top-to-bottom gradient plus a faint purple glow
+     *  near the top-left (matching the reference DA), and a 1px gold hairline on the right edge to
+     *  separate it from the art panel. Opaque so it fully covers whatever RootPanel's shared background
+     *  image would otherwise show through here (see class javadoc on why there's a single shared image
+     *  for the whole window rather than per-panel art). */
+    private static class SidebarPanel extends JPanel {
+
+        SidebarPanel() {
+            setOpaque(true);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int w = getWidth();
+            int h = getHeight();
+            g2.setPaint(new LinearGradientPaint(0, 0, 0, h, new float[] {0F, 1F}, new Color[] {SIDEBAR_TOP, SIDEBAR_BOTTOM}));
+            g2.fillRect(0, 0, w, h);
+
+            g2.setPaint(
+                new RadialGradientPaint(
+                    w * 0.2F,
+                    0F,
+                    w * 0.6F,
+                    new float[] {0F, 1F},
+                    new Color[] {new Color(PURPLE_DEEP.getRed(), PURPLE_DEEP.getGreen(), PURPLE_DEEP.getBlue(), 70), new Color(0, 0, 0, 0)}));
+            g2.fillRect(0, 0, w, h);
+
+            g2.setColor(new Color(GOLD.getRed(), GOLD.getGreen(), GOLD.getBlue(), 46));
+            g2.drawLine(w - 1, 0, w - 1, h);
+
+            g2.dispose();
+        }
+    }
+
+    /** Rounded translucent box behind the avatar icon + pseudo text field. */
+    private static class PseudoFieldPanel extends JPanel {
+
+        PseudoFieldPanel() {
+            setOpaque(false);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setColor(new Color(255, 255, 255, 13));
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 10, 10);
+            g2.setColor(new Color(255, 255, 255, 20));
+            g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 10, 10);
+            g2.dispose();
+            super.paintComponent(g);
+        }
+    }
+
+    /** Small circular person-silhouette glyph next to the pseudo field - stands in for a real skin-based
+     *  avatar (offline-mode UUIDs don't map to a real Mojang skin, same reasoning as the old AvatarLabel
+     *  it replaces). */
+    private static class AvatarIcon extends JComponent {
+
+        AvatarIcon() {
+            setPreferredSize(new Dimension(27, 27));
+            setMaximumSize(getPreferredSize());
+            setOpaque(false);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int d = Math.min(getWidth(), getHeight());
+            g2.setPaint(new LinearGradientPaint(0, 0, d * 0.7F, d * 0.7F, new float[] {0F, 1F}, new Color[] {PURPLE_DEEP, PURPLE_DARK}));
+            g2.fillOval(0, 0, d - 1, d - 1);
+            g2.setColor(new Color(GOLD.getRed(), GOLD.getGreen(), GOLD.getBlue(), 130));
+            g2.drawOval(0, 0, d - 1, d - 1);
+
+            g2.setColor(GOLD);
+            g2.setStroke(new BasicStroke(1.6F));
+            float headD = d * 0.32F;
+            g2.draw(new Ellipse2D.Float(d / 2F - headD / 2F, d * 0.24F, headD, headD));
+            java.awt.geom.Arc2D.Float body =
+                new java.awt.geom.Arc2D.Float(d * 0.18F, d * 0.52F, d * 0.64F, d * 0.64F, 20, 140, java.awt.geom.Arc2D.OPEN);
+            g2.draw(body);
+
+            g2.dispose();
+        }
+    }
+
+    /** The Jouer button, redesigned to match the reference DA instead of the old flat button_play.png
+     *  artwork - a dark violet gradient fill with a gold border/glow, since a light gold surface (closer
+     *  to the reference's own button) reads poorly with white text and would need per-pixel text-shadow
+     *  tricks to stay legible; this keeps the same gold+violet vocabulary while staying simple to paint. */
+    private static class PlayButton extends JButton {
+
+        private boolean hovered;
+
+        PlayButton(String text) {
+            super(text);
+            setFont(new Font("Segoe UI", Font.BOLD, 15));
+            setForeground(Color.WHITE);
+            setFocusPainted(false);
+            setBorderPainted(false);
+            setContentAreaFilled(false);
+            setPreferredSize(new Dimension(SIDEBAR_CONTENT_WIDTH, 52));
+            setMaximumSize(getPreferredSize());
+            setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+            addMouseListener(new MouseAdapter() {
+
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    hovered = true;
+                    repaint();
+                }
+
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    hovered = false;
+                    repaint();
+                }
+            });
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int w = getWidth();
+            int h = getHeight();
+            g2.setPaint(new LinearGradientPaint(0, 0, w * 0.7F, h, new float[] {0F, 1F}, new Color[] {PURPLE_DEEP, PURPLE_DARK}));
+            g2.fillRoundRect(0, 0, w - 1, h - 1, 12, 12);
+            g2.setColor(hovered ? GOLD : new Color(GOLD.getRed(), GOLD.getGreen(), GOLD.getBlue(), 140));
+            g2.setStroke(new BasicStroke(1.3F));
+            g2.drawRoundRect(0, 0, w - 1, h - 1, 12, 12);
+
+            java.awt.geom.Path2D.Float triangle = new java.awt.geom.Path2D.Float();
+            float tx = w / 2F - 42F;
+            float ty = h / 2F;
+            triangle.moveTo(tx, ty - 7);
+            triangle.lineTo(tx, ty + 7);
+            triangle.lineTo(tx + 11, ty);
+            triangle.closePath();
+            g2.setColor(GOLD);
+            g2.fill(triangle);
+
+            g2.setFont(getFont());
+            g2.setColor(getForeground());
+            var metrics = g2.getFontMetrics();
+            int textX = w / 2 - metrics.stringWidth(getText()) / 2 + 10;
+            int textY = (h - metrics.getHeight()) / 2 + metrics.getAscent();
+            g2.drawString(getText(), textX, textY);
+
+            g2.dispose();
+        }
+    }
+
+    /** Flat icon button used in the sidebar's icon row (currently just the "open install folder"
+     *  shortcut) - same visual language as {@link WindowControlButton}/{@link SoundButton} (a hand-drawn
+     *  glyph on a subtle rounded tile) rather than another bundled image asset. */
+    private static class SidebarIconButton extends JButton {
+
+        enum Glyph { FOLDER }
+
+        private final Glyph glyph;
+        private boolean hovered;
+
+        SidebarIconButton(Glyph glyph) {
+            this.glyph = glyph;
+            setPreferredSize(new Dimension(38, 38));
+            setContentAreaFilled(false);
+            setBorderPainted(false);
+            setFocusPainted(false);
+            setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+            addMouseListener(new MouseAdapter() {
+
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    hovered = true;
+                    repaint();
+                }
+
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    hovered = false;
+                    repaint();
+                }
+            });
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int w = getWidth();
+            int h = getHeight();
+            g2.setColor(new Color(255, 255, 255, hovered ? 20 : 13));
+            g2.fillRoundRect(0, 0, w - 1, h - 1, 10, 10);
+            g2.setColor(new Color(255, 255, 255, 20));
+            g2.drawRoundRect(0, 0, w - 1, h - 1, 10, 10);
+
+            g2.setColor(hovered ? GOLD : INK_DIM);
+            g2.setStroke(new BasicStroke(1.7F));
+            if (glyph == Glyph.FOLDER) {
+                int pad = w / 4;
+                g2.drawRoundRect(pad - 2, h / 2 - 2, w - 2 * pad + 4, h / 3, 3, 3);
+                g2.drawLine(pad, h / 2 - 2, pad + 5, h / 2 - 7);
+                g2.drawLine(pad + 5, h / 2 - 7, pad + 12, h / 2 - 7);
+                g2.drawLine(pad + 12, h / 2 - 7, pad + 15, h / 2 - 2);
+            }
+
+            g2.dispose();
+        }
+    }
+
+    /** Small rounded pill in the art panel's top bar - a live-status dot plus the server name, standing
+     *  in for a server switcher since FuryMc only has the one server. */
+    private static class ServerPill extends JComponent {
+
+        private final String text;
+
+        ServerPill(String text) {
+            this.text = text;
+            setFont(new Font("Segoe UI", Font.BOLD, 12));
+            setOpaque(false);
+        }
+
+        @Override
+        public Dimension getPreferredSize() {
+            Graphics2D g2 = (Graphics2D) getGraphics();
+            int textWidth = g2 != null ? g2.getFontMetrics(getFont()).stringWidth(text)
+                : text.length() * 8;
+            return new Dimension(textWidth + 44, 30);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int w = getWidth();
+            int h = getHeight();
+            g2.setColor(new Color(10, 9, 13, 165));
+            g2.fillRoundRect(0, 0, w - 1, h - 1, h, h);
+            g2.setColor(new Color(GOLD.getRed(), GOLD.getGreen(), GOLD.getBlue(), 46));
+            g2.drawRoundRect(0, 0, w - 1, h - 1, h, h);
+
+            g2.setColor(new Color(0x6F, 0xE0, 0x8A));
+            g2.fillOval(14, h / 2 - 3, 7, 7);
+
+            g2.setFont(getFont());
+            g2.setColor(Color.WHITE);
+            var metrics = g2.getFontMetrics();
+            int textY = (h - metrics.getHeight()) / 2 + metrics.getAscent();
+            g2.drawString(text, 28, textY);
+
+            g2.dispose();
+        }
+    }
+
+    /** Companion pill to {@link ServerPill}, gold-on-violet - reserved for the community Discord link
+     *  once one exists (see the TODO where this is instantiated). */
+    private static class DiscordPill extends JComponent {
+
+        DiscordPill() {
+            setFont(new Font("Segoe UI", Font.BOLD, 11));
+            setOpaque(false);
+            setPreferredSize(new Dimension(96, 28));
+            setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int w = getWidth();
+            int h = getHeight();
+            g2.setPaint(new LinearGradientPaint(0, 0, w, h, new float[] {0F, 1F}, new Color[] {PURPLE_DEEP, PURPLE_DARK}));
+            g2.fillRoundRect(0, 0, w - 1, h - 1, h, h);
+            g2.setColor(new Color(GOLD.getRed(), GOLD.getGreen(), GOLD.getBlue(), 110));
+            g2.drawRoundRect(0, 0, w - 1, h - 1, h, h);
+
+            g2.setFont(getFont());
+            g2.setColor(Color.WHITE);
+            var metrics = g2.getFontMetrics();
+            String text = "DISCORD";
+            int textX = (w - metrics.stringWidth(text)) / 2;
+            int textY = (h - metrics.getHeight()) / 2 + metrics.getAscent();
+            g2.drawString(text, textX, textY);
+
+            g2.dispose();
+        }
+    }
+
+    /** Right-hand panel of the main card - non-opaque so RootPanel's shared background image shows
+     *  through (see class javadoc), with its own dark gradient overlay drawn on top for text contrast,
+     *  matching the reference DA's dimmed art treatment. */
+    private static class ArtPanel extends JPanel {
+
+        ArtPanel() {
+            setOpaque(false);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            Graphics2D g2 = (Graphics2D) g.create();
+            int h = getHeight();
+            g2.setPaint(
+                new LinearGradientPaint(
+                    0,
+                    0,
+                    0,
+                    h,
+                    new float[] {0F, 0.3F, 1F},
+                    new Color[] {new Color(8, 6, 10, 140), new Color(8, 6, 10, 90), new Color(8, 6, 10, 185)}));
+            g2.fillRect(0, 0, getWidth(), h);
+            g2.dispose();
+        }
+    }
+
+    /** One "Astuces" card in the art panel - icon tile, title, description, with a border/background
+     *  hover state (see the reference DA request for this specifically). */
+    private static class TipCard extends JPanel {
+
+        enum Glyph { BOX, STAR, CLOCK }
+
+        private final Glyph glyph;
+        private boolean hovered;
+
+        TipCard(Glyph glyph, String title, String description) {
+            this.glyph = glyph;
+            setOpaque(false);
+            setLayout(new BorderLayout(14, 0));
+            setBorder(BorderFactory.createEmptyBorder(14, 16, 14, 16));
+            setMaximumSize(new Dimension(Integer.MAX_VALUE, 96));
+            setAlignmentX(Component.LEFT_ALIGNMENT);
+
+            IconTile tile = new IconTile();
+            add(tile, BorderLayout.WEST);
+
+            JPanel text = new JPanel();
+            text.setOpaque(false);
+            text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
+
+            JLabel titleLabel = new JLabel(title);
+            titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+            titleLabel.setForeground(Color.WHITE);
+            titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            text.add(titleLabel);
+            text.add(Box.createVerticalStrut(4));
+
+            JLabel descLabel = new JLabel(
+                "<html><div style='width:420px'>" + description + "</div></html>");
+            descLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            descLabel.setForeground(INK_DIM);
+            descLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            text.add(descLabel);
+
+            add(text, BorderLayout.CENTER);
+
+            MouseAdapter hoverListener = new MouseAdapter() {
+
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    hovered = true;
+                    tile.setHovered(true);
+                    repaint();
+                }
+
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    hovered = false;
+                    tile.setHovered(false);
+                    repaint();
+                }
+            };
+            addMouseListener(hoverListener);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            g2.setColor(new Color(12, 10, 16, hovered ? 216 : 173));
+            g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 14, 14);
+            g2.setColor(hovered ? new Color(GOLD.getRed(), GOLD.getGreen(), GOLD.getBlue(), 140)
+                : new Color(GOLD.getRed(), GOLD.getGreen(), GOLD.getBlue(), 46));
+            g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 14, 14);
+
+            g2.dispose();
+        }
+
+        /** Small gradient tile with a simple hand-drawn glyph, on the left of each tip card. */
+        private class IconTile extends JComponent {
+
+            private boolean hovered;
+
+            IconTile() {
+                setPreferredSize(new Dimension(46, 46));
+                setOpaque(false);
+            }
+
+            void setHovered(boolean hovered) {
+                this.hovered = hovered;
+                repaint();
+            }
+
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                int w = getWidth();
+                int h = getHeight();
+                Color from = hovered ? GOLD_DIM : PURPLE_DEEP;
+                g2.setPaint(new LinearGradientPaint(0, 0, w, h, new float[] {0F, 1F}, new Color[] {from, PURPLE_DARK}));
+                g2.fillRoundRect(0, 0, w - 1, h - 1, 10, 10);
+
+                g2.setColor(GOLD);
+                g2.setStroke(new BasicStroke(1.7F));
+                int cx = w / 2;
+                int cy = h / 2;
+                switch (glyph) {
+                    case BOX:
+                        g2.drawRect(cx - 9, cy - 8, 18, 16);
+                        g2.drawLine(cx - 9, cy, cx + 9, cy);
+                        break;
+                    case STAR:
+                        java.awt.geom.Path2D.Float star = new java.awt.geom.Path2D.Float();
+                        for (int i = 0; i < 8; i++) {
+                            double angle = Math.PI / 4 * i - Math.PI / 2;
+                            double r = i % 2 == 0 ? 10 : 4.5;
+                            float px = (float) (cx + r * Math.cos(angle));
+                            float py = (float) (cy + r * Math.sin(angle));
+                            if (i == 0) {
+                                star.moveTo(px, py);
+                            } else {
+                                star.lineTo(px, py);
+                            }
+                        }
+                        star.closePath();
+                        g2.draw(star);
+                        break;
+                    case CLOCK:
+                        g2.drawOval(cx - 10, cy - 10, 20, 20);
+                        g2.drawLine(cx, cy, cx, cy - 6);
+                        g2.drawLine(cx, cy, cx + 5, cy + 2);
+                        break;
+                    default:
+                        break;
+                }
+
+                g2.dispose();
+            }
+        }
+    }
+
     /** Streams PCM in small chunks on a dedicated thread instead of handing the whole track to a
      *  javax.sound.sampled.Clip at once - see the note on {@link #startBackgroundMusic()} for why. Gain
      *  is applied here in software (each signed 16-bit sample scaled by the current volume) rather than
@@ -1016,27 +1621,6 @@ public class FuryMcLauncher extends JFrame {
         }
     }
 
-    /** Small pixelated placeholder avatar (no real skin-fetching yet - offline-mode UUIDs don't map to
-     *  a real Mojang skin anyway). */
-    private static class AvatarLabel extends JLabel {
-
-        AvatarLabel() {
-            setPreferredSize(new Dimension(48, 48));
-        }
-
-        @Override
-        protected void paintComponent(Graphics g) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setColor(new Color(0x8A, 0x6D, 0x5A));
-            g2.fillRect(0, 0, getWidth(), getHeight());
-            g2.setColor(new Color(0x5A, 0x42, 0x33));
-            int eyeSize = getWidth() / 8;
-            g2.fillRect(getWidth() / 3 - eyeSize / 2, getHeight() / 3, eyeSize, eyeSize);
-            g2.fillRect(getWidth() * 2 / 3 - eyeSize / 2, getHeight() / 3, eyeSize, eyeSize);
-            g2.dispose();
-        }
-    }
-
     /** Same purple/gold gradient look as the in-game Advanced Enchanting GUI button, so the launcher and
      *  the mod's own custom UI feel like one product. */
     private static class StyledButton extends JButton {
@@ -1087,74 +1671,6 @@ public class FuryMcLauncher extends JFrame {
             int textX = (getWidth() - metrics.stringWidth(getText())) / 2;
             int textY = (getHeight() - metrics.getHeight()) / 2 + metrics.getAscent();
             g2.drawString(getText(), textX, textY);
-            g2.dispose();
-        }
-    }
-
-    /** Small round dark button with a drawn gear icon (no font glyph dependency) that opens the RAM
-     *  settings dialog. */
-    /** Renders a custom-drawn PNG (supplied at 2x the display size for crispness) scaled down to fit,
-     *  with a brightened variant swapped in on hover - used for Jouer/Paramètres. */
-    private static class ImageButton extends JButton {
-
-        private final Image normal;
-        private final Image hovered;
-        private boolean isHovered;
-
-        ImageButton(Image sourceImage, int displayWidth, int displayHeight) {
-            this(sourceImage, brighten((BufferedImage) sourceImage, 1.25F), displayWidth, displayHeight);
-        }
-
-        /** Use this overload when a dedicated hover-state artwork is supplied, instead of the
-         *  auto-brightened fallback above. */
-        ImageButton(Image sourceImage, Image hoverImage, int displayWidth, int displayHeight) {
-            this.normal = sourceImage;
-            this.hovered = hoverImage;
-            setPreferredSize(new Dimension(displayWidth, displayHeight));
-            setContentAreaFilled(false);
-            setBorderPainted(false);
-            setFocusPainted(false);
-            addMouseListener(new MouseAdapter() {
-
-                @Override
-                public void mouseEntered(MouseEvent e) {
-                    isHovered = true;
-                    repaint();
-                }
-
-                @Override
-                public void mouseExited(MouseEvent e) {
-                    isHovered = false;
-                    repaint();
-                }
-            });
-        }
-
-        private static BufferedImage brighten(BufferedImage source, float factor) {
-            RescaleOp op = new RescaleOp(new float[] { factor, factor, factor, 1F }, new float[4], null);
-            BufferedImage brightened = new BufferedImage(
-                source.getWidth(),
-                source.getHeight(),
-                BufferedImage.TYPE_INT_ARGB);
-            op.filter(source, brightened);
-            return brightened;
-        }
-
-        @Override
-        protected void paintComponent(Graphics g) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-            int w = getWidth();
-            int h = getHeight();
-            if (isHovered) {
-                // Brightness alone (or a swapped-in hover image alone) barely reads as "something
-                // changed" - a small zoom on top makes the hover state unmistakable without being loud.
-                int zoomW = Math.round(w * 1.06F);
-                int zoomH = Math.round(h * 1.06F);
-                g2.drawImage(hovered, (w - zoomW) / 2, (h - zoomH) / 2, zoomW, zoomH, null);
-            } else {
-                g2.drawImage(normal, 0, 0, w, h, null);
-            }
             g2.dispose();
         }
     }
