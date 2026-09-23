@@ -55,6 +55,7 @@ import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
@@ -95,7 +96,7 @@ public class FuryMcLauncher extends JFrame {
     // (1.4.4) - since SelfUpdater compares the two unconditionally on every startup, that mismatch made
     // it attempt the self-update jar-swap-and-relaunch dance on literally every single launch, not just
     // once after an actual update. Bump this alongside launcherVersion in version.json from now on.
-    private static final String LAUNCHER_VERSION = "1.4.9";
+    private static final String LAUNCHER_VERSION = "1.4.10";
 
     private static final Dimension LOADING_SIZE = new Dimension(420, 580);
     private static final Dimension MAIN_SIZE = new Dimension(1100, 620);
@@ -124,6 +125,15 @@ public class FuryMcLauncher extends JFrame {
     private static final int SIDEBAR_WIDTH = 400;
     private static final int SIDEBAR_PAD_H = 28;
     private static final int SIDEBAR_CONTENT_WIDTH = SIDEBAR_WIDTH - 2 * SIDEBAR_PAD_H;
+
+    // Same reasoning for the art panel on the right (see buildArtPanel's EmptyBorder(22, 30, 26, 30)) -
+    // used to give TipCard's description JTextArea a known, correct wrap width up front instead of
+    // guessing a fixed HTML <div> width that didn't match the real available space (see TipCard).
+    private static final int ART_CONTENT_WIDTH = MAIN_SIZE.width - SIDEBAR_WIDTH - 60;
+    private static final int TIP_ICON_WIDTH = 46;
+    private static final int TIP_ICON_GAP = 14;
+    private static final int TIP_CARD_PAD_H = 32;
+    private static final int TIP_TEXT_WIDTH = ART_CONTENT_WIDTH - TIP_CARD_PAD_H - TIP_ICON_WIDTH - TIP_ICON_GAP;
 
     private final LauncherConfig config = new LauncherConfig();
     private final UpdateManager updateManager = new UpdateManager();
@@ -1418,8 +1428,8 @@ public class FuryMcLauncher extends JFrame {
         TipCard(Glyph glyph, String title, String description) {
             this.glyph = glyph;
             setOpaque(false);
-            setLayout(new BorderLayout(14, 0));
-            setBorder(BorderFactory.createEmptyBorder(14, 16, 14, 16));
+            setLayout(new BorderLayout(TIP_ICON_GAP, 0));
+            setBorder(BorderFactory.createEmptyBorder(14, TIP_CARD_PAD_H / 2, 14, TIP_CARD_PAD_H / 2));
             setMaximumSize(new Dimension(Integer.MAX_VALUE, 96));
             setAlignmentX(Component.LEFT_ALIGNMENT);
 
@@ -1437,11 +1447,23 @@ public class FuryMcLauncher extends JFrame {
             text.add(titleLabel);
             text.add(Box.createVerticalStrut(4));
 
-            JLabel descLabel = new JLabel(
-                "<html><div style='width:420px'>" + description + "</div></html>");
+            // A JTextArea (not a JLabel with a fixed-pixel-width HTML <div>) reflows to whatever width
+            // it's given - the HTML approach previously here hardcoded a width guess that didn't match
+            // the real available space and clipped the last few words. setSize() up front (rather than
+            // leaving it to normal layout) is the standard trick to make a wrap-enabled JTextArea report
+            // a correctly wrapped preferred height inside a BoxLayout - safe here since the window (and
+            // therefore this exact width) never changes at runtime.
+            JTextArea descLabel = new JTextArea(description);
+            descLabel.setLineWrap(true);
+            descLabel.setWrapStyleWord(true);
+            descLabel.setEditable(false);
+            descLabel.setFocusable(false);
+            descLabel.setOpaque(false);
+            descLabel.setBorder(null);
             descLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
             descLabel.setForeground(INK_DIM);
             descLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            descLabel.setSize(new Dimension(TIP_TEXT_WIDTH, Short.MAX_VALUE));
             text.add(descLabel);
 
             add(text, BorderLayout.CENTER);
@@ -1485,7 +1507,7 @@ public class FuryMcLauncher extends JFrame {
             private boolean hovered;
 
             IconTile() {
-                setPreferredSize(new Dimension(46, 46));
+                setPreferredSize(new Dimension(TIP_ICON_WIDTH, TIP_ICON_WIDTH));
                 setOpaque(false);
             }
 
