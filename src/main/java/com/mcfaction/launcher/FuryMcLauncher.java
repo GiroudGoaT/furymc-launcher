@@ -95,7 +95,7 @@ public class FuryMcLauncher extends JFrame {
     // (1.4.4) - since SelfUpdater compares the two unconditionally on every startup, that mismatch made
     // it attempt the self-update jar-swap-and-relaunch dance on literally every single launch, not just
     // once after an actual update. Bump this alongside launcherVersion in version.json from now on.
-    private static final String LAUNCHER_VERSION = "1.4.16";
+    private static final String LAUNCHER_VERSION = "1.4.18";
 
     private static final Dimension LOADING_SIZE = new Dimension(420, 580);
     private static final Dimension MAIN_SIZE = new Dimension(1100, 620);
@@ -655,7 +655,18 @@ public class FuryMcLauncher extends JFrame {
                     get();
                     // The game runs as its own detached process (see GameLauncher#launch) - it doesn't
                     // need this window anymore, so close it instead of leaving it sitting behind the game.
+                    //
+                    // Stopping the music thread and disposing the window isn't enough to actually end
+                    // the launcher process - the Java Sound engine can leave its own non-daemon thread
+                    // running behind the SourceDataLine, which keeps the JVM (and the music) alive
+                    // indefinitely even after every Swing window is gone (previously the only way to
+                    // silence it was to reboot). Explicitly stop the player, then force the whole
+                    // process to exit instead of relying on implicit JVM shutdown.
+                    if (musicPlayer != null) {
+                        musicPlayer.stop();
+                    }
                     dispose();
+                    System.exit(0);
                 } catch (Exception e) {
                     Throwable cause = e.getCause() != null ? e.getCause() : e;
                     mainStatusLabel.setText("Erreur : " + cause.getMessage());
@@ -1807,6 +1818,13 @@ public class FuryMcLauncher extends JFrame {
             Thread thread = new Thread(this::run, "music-player");
             thread.setDaemon(true);
             thread.start();
+        }
+
+        /** Signals run()'s loop to exit and close the line on its own thread - the only safe way to
+         *  release a SourceDataLine, since javax.sound.sampled isn't thread-safe for concurrent
+         *  close()/write() calls from different threads. */
+        void stop() {
+            running = false;
         }
 
         private void run() {
